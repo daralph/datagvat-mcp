@@ -1405,3 +1405,46 @@ async def test_bearer_middleware_closes_websocket_without_calling_app() -> None:
 def test_clean_error_hides_home_paths() -> None:
     text = m._clean_error(ValueError("Extension fehlt in /Users/jemand/.duckdb/extensions/v1/x.duckdb_extension, Division 4/2 ok"))
     assert "/Users" not in text and "4/2" in text
+
+
+def test_temp_files_live_in_own_dir_and_stale_dirs_are_swept(tmp_path, monkeypatch) -> None:
+    import os
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(m, "_tmp_dir", None)
+    stale = tmp_path / "datagvat-2147483646-abcd"  # PID existiert nicht
+    alive = tmp_path / f"datagvat-{os.getpid()}-zzzz"  # eigener Prozess
+    other = tmp_path / "anderes-verzeichnis"
+    for d in (stale, alive, other):
+        d.mkdir()
+    fd, name = m._mkstemp(".x")
+    os.close(fd)
+    assert Path(name).parent == m._tmp_root() and m._tmp_root().parent == tmp_path
+    assert not stale.exists() and alive.exists() and other.exists()
+    monkeypatch.setattr(m, "_tmp_dir", None)  # Fixture-Verzeichnis nicht ins echte Temp zurueckschreiben
+
+
+def test_zip_with_too_many_entries_is_refused_before_reading_directory(tmp_path, monkeypatch) -> None:
+    import io
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
+        for i in range(m.MAX_ZIP_ENTRIES + 1):
+            z.writestr(f"{i}.csv", "")
+    raw = tmp_path / "viele.zip"
+    raw.write_bytes(buf.getvalue())
+    called = []
+    monkeypatch.setattr(zipfile, "ZipFile", lambda *a, **k: called.append(1))
+    with pytest.raises(ValueError, match="zu viele"):
+        m._prepare_sync(raw, "http://x/viele.zip", "", "", "", "", -1)
+    assert called == [], "das Inhaltsverzeichnis darf gar nicht erst geladen werden"
+
+
+async def test_unused_download_locks_are_dropped(transport) -> None:
+    transport(lambda req: httpx.Response(200, content=CSV_BODY))
+    async with m._cached_download(PUBLIC):
+        pass
+    m._cache_clear()
+    m._download_locks["alt"] = asyncio.Lock()
+    m._cache_evict()
+    assert "alt" not in m._download_locks

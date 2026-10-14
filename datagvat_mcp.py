@@ -24,6 +24,7 @@ import os
 import re
 import shutil
 import socket
+import struct
 import sys
 import tempfile
 import threading
@@ -66,6 +67,7 @@ MAX_SQL_ROWS = 200
 MAX_REDIRECTS = 5
 DOWNLOAD_DEADLINE = float(os.getenv("DATAGVAT_DOWNLOAD_TIMEOUT", "120"))  # Gesamtdauer eines Downloads
 MAX_PARALLEL = max(1, int(os.getenv("DATAGVAT_MAX_PARALLEL", "4")))  # gleichzeitige Tool-Aufrufe mit Datei
+MAX_ZIP_ENTRIES = 10_000  # mehr Eintraege im Archiv: ZipInfo-Objekte wuerden Hunderte MB belegen
 MAX_EXCEL_CELLS = 5_000_000  # Zellbereich eines Blatts (calamine baut ihn dicht auf)
 MAX_CELL_CHARS = 2000  # Zellen im SQL-Ergebnis werden darauf gekuerzt
 MAX_RESULT_CHARS = 1_000_000  # Gesamtgroesse des SQL-Ergebnisses (Text)
@@ -383,10 +385,53 @@ def _detect_format(head: bytes, url: str, fmt_hint: str, content_type: str) -> s
     return ".csv"
 
 
+_tmp_dir: Path | None = None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:  # z. B. PermissionError: Prozess existiert, gehoert nur jemand anderem
+        return True
+    return True
+
+
+def _tmp_root() -> Path:
+    """Eigenes Temp-Verzeichnis je Prozess. Reste abgestuerzter Prozesse (SIGKILL) werden beim naechsten Start entfernt."""
+    global _tmp_dir
+    if _tmp_dir is None or not _tmp_dir.exists():
+        base = Path(tempfile.gettempdir())
+        for old in base.glob("datagvat-*"):
+            m = re.fullmatch(r"datagvat-(\d+)-\w+", old.name)
+            if m and old.is_dir() and not _pid_alive(int(m.group(1))):
+                shutil.rmtree(old, ignore_errors=True)
+        _tmp_dir = Path(tempfile.mkdtemp(prefix=f"datagvat-{os.getpid()}-"))
+        atexit.register(shutil.rmtree, _tmp_dir, True)
+    return _tmp_dir
+
+
+def _mkstemp(suffix: str = "") -> tuple[int, str]:
+    return tempfile.mkstemp(suffix=suffix, dir=_tmp_root())
+
+
+def _zip_entry_count(path: Path) -> int | None:
+    """Liest die Eintragszahl aus dem End-Record, ohne das Inhaltsverzeichnis zu laden (0xFFFF = Zip64/sehr viele)."""
+    size = path.stat().st_size
+    with path.open("rb") as fin:
+        fin.seek(max(0, size - 65_557))
+        tail = fin.read()
+    i = tail.rfind(b"PK\x05\x06")
+    if i < 0 or len(tail) < i + 22:
+        return None
+    return struct.unpack_from("<H", tail, i + 10)[0]
+
+
 def _normalize_to_utf8(src: Path, suffix: str = ".csv") -> Path:
     """Schreibt eine Textdatei blockweise nach UTF-8 um (UTF-8-BOM oder cp1252, wie bei OGD ueblich)."""
     for encoding in ("utf-8-sig", "cp1252"):
-        fd, name = tempfile.mkstemp(suffix=suffix)
+        fd, name = _mkstemp(suffix)
         os.close(fd)
         dst = Path(name)
         try:
@@ -406,7 +451,7 @@ def _normalize_to_utf8(src: Path, suffix: str = ".csv") -> Path:
 
 def _link_or_copy(src: Path, suffix: str) -> Path:
     """Gibt der Datei eine Endung, ohne das (gecachte) Original anzutasten."""
-    fd, name = tempfile.mkstemp(suffix=suffix)
+    fd, name = _mkstemp(suffix)
     os.close(fd)
     dst = Path(name)
     dst.unlink()
@@ -446,7 +491,7 @@ def _header_index(rows: list[list[str]]) -> int:
 def _prepare_ooxml(raw: Path, sheet: str, skip_rows: int) -> _Prepared:
     """xlsx: Mitglieder mit Zaehler in ein neues Archiv kopieren. Die Header-Groessen eines ZIP koennen gefaelscht
     sein; Pythons zipfile liest nur so viele Bytes wie angegeben und prueft die CRC, ein Fake faellt also auf."""
-    fd, name = tempfile.mkstemp(suffix=".xlsx")
+    fd, name = _mkstemp(".xlsx")
     os.close(fd)
     safe = Path(name)
     total = 0
@@ -476,7 +521,7 @@ def _prepare_excel(path: Path, suffix: str, sheet: str, skip_rows: int) -> _Prep
         raise ValueError("Excel-Unterstuetzung nicht verfuegbar (python-calamine fehlt).") from exc
 
     work = _link_or_copy(path, suffix)  # calamine erkennt das Format an der Endung
-    fd, out_name = tempfile.mkstemp(suffix=".csv")
+    fd, out_name = _mkstemp(".csv")
     os.close(fd)
     out = Path(out_name)
     try:
@@ -567,7 +612,7 @@ def _prepare_archive(zf: zipfile.ZipFile, member: str, sheet: str, skip_rows: in
             f"'{picked.filename}' ist entpackt {picked.file_size // (1024 * 1024)} MB gross "
             f"(Limit {MAX_UNPACKED_BYTES // (1024 * 1024)} MB)."
         )
-    fd, name = tempfile.mkstemp(suffix=".member")
+    fd, name = _mkstemp(".member")
     os.close(fd)
     extracted = Path(name)
     try:
@@ -593,6 +638,9 @@ def _prepare_sync(
         head = fin.read(4096)
 
     if head.startswith(_ZIP_MAGIC):
+        count = _zip_entry_count(raw)
+        if count is not None and count > MAX_ZIP_ENTRIES:
+            raise ValueError(f"Das ZIP-Archiv enthaelt zu viele Dateien (mehr als {MAX_ZIP_ENTRIES:,}).")
         if not zipfile.is_zipfile(raw):
             raise ValueError("Das ZIP-Archiv ist beschaedigt.")
         with zipfile.ZipFile(raw) as zf:
@@ -685,7 +733,7 @@ async def _fetch_hop(client: httpx.AsyncClient, url: str, raw: Path) -> tuple[st
 
 async def _download_raw(url: str) -> tuple[Path, str]:
     """Laedt eine Distribution gestreamt auf die Platte. Jede Weiterleitung wird erneut gegen SSRF geprueft."""
-    fd, name = tempfile.mkstemp(suffix=".download")
+    fd, name = _mkstemp(".download")
     os.close(fd)
     raw = Path(name)
     try:
@@ -770,6 +818,9 @@ def _cache_drop(key: str) -> None:
 
 def _cache_evict() -> None:
     """Entfernt abgelaufene Eintraege, dann die am laengsten ungenutzten, bis das Byte-Limit passt."""
+    for k, lk in list(_download_locks.items()):  # Sperren ohne Eintrag und ohne Halter wegraeumen
+        if k not in _cache and not lk.locked():
+            del _download_locks[k]
     now = time.monotonic()
     for key, entry in list(_cache.items()):
         if entry.users == 0 and now - entry.stored >= CACHE_TTL_SECONDS:
