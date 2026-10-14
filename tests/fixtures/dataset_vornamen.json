@@ -1,0 +1,323 @@
+{
+ "result": {
+  "country": null,
+  "keywords": [
+   {
+    "id": "vornamen-neugeborener",
+    "label": "Vornamen Neugeborener",
+    "language": "de"
+   }
+  ],
+  "references": null,
+  "catalog": {
+   "country": null,
+   "catalog": null,
+   "catalogueBackground": null,
+   "description": null,
+   "language": [
+    {
+     "resource": "http://publications.europa.eu/resource/authority/language/DEU",
+     "id": "de",
+     "label": "German"
+    }
+   ],
+   "availability": null,
+   "title": {
+    "de": "STAT Harvester"
+   },
+   "visualisation_selection": null,
+   "rights": null,
+   "spatial_resource": null,
+   "catalogueLogo": null,
+   "modified": "2025-12-30T22:31:34Z",
+   "catalogueFavIcon": null,
+   "visualisation_data": null,
+   "id": "harvest-stat",
+   "has_part": null,
+   "spatial": null,
+   "issued": "2025-09-04T12:39:08Z",
+   "creator": null,
+   "is_part_of": "data-gv-at",
+   "is_open_data_presence": null,
+   "theme_taxonomy": null,
+   "license": null,
+   "catalogueInterestingDatasets": null,
+   "organization_id": null,
+   "publisher": null,
+   "catalogueProfile": null,
+   "homepage": null
+  },
+  "subject": null,
+  "language": [
+   {
+    "id": "DEU",
+    "label": "Deutsch",
+    "resource": "http://publications.europa.eu/resource/authority/language/DEU"
+   }
+  ],
+  "source": null,
+  "type": null,
+  "temporal_resolution": null,
+  "maintainer": null,
+  "relation": null,
+  "stat_unit_measure": null,
+  "qualified_relation": null,
+  "political_geocoding_uri": null,
+  "spatial_resource": null,
+  "modified": "2026-07-09T09:03:43Z",
+  "id": "603066f6-0f0a-3806-b394-f14b7d2cb437",
+  "issued": null,
+  "spatial": null,
+  "temporal": [
+   {
+    "gte": "2018-03-13T13:00:00Z"
+   }
+  ],
+  "is_version_of": null,
+  "identifier": [
+   "603066f6-0f0a-3806-b394-f14b7d2cb437"
+  ],
+  "resource": "https://www.data.gv.at/katalog/datasets/603066f6-0f0a-3806-b394-f14b7d2cb437",
+  "legal_basis": null,
+  "hvd_category": null,
+  "procedure_title": null,
+  "is_referenced_by": null,
+  "distributions": [
+   {
+    "id": "d2af4535-6b8d-4ed1-babc-a90e119a1efa",
+    "description": {
+     "de": "C-JAHR-0:Jahr;C-WOHNBEZIRK-0:Politischer Bezirk;C-GESCHLECHT-0:Geschlecht;F-VORNAME_NORMALISIERT:Vorname normalisiert;F-ANZAHL_LGEB:Anzahl Lebendgeborene"
+    },
+    "format": {
+     "id": "CSV",
+     "label": "CSV",
+     "resource": "http://publications.europa.eu/resource/authority/file-type/CSV"
+    },
+    "language": [
+     {
+      "id": "DEU",
+      "label": "Deutsch",
+      "resource": "http://publications.europa.eu/resource/authority/language/DEU"
+     }
+    ],
+    "title": {
+     "de": "OGDEXT_VORNAMEN_1_HEADER"
+    },
+    "access_url": [
+     "https://data.statistik.gv.at/data/OGDEXT_VORNAMEN_1_HEADER.csv"
+    ]
+   },
+   {
+    "id": "996d47df-6ffd-47af-8ece-6918320fcd23",
+    "description": {
+     "de": "C-JAHR-0:Jahr;C-WOHNBEZIRK-0:Politischer Bezirk;C-GESCHLECHT-0:Geschlecht;F-VORNAME_NORMALISIERT:Vorname normalisiert;F-ANZAHL_LGEB:Anzahl Lebendgeborene"
+    },
+    "format": {
+     "id": "CSV",
+     "label": "CSV",
+     "resource": "http://publications.europa.eu/resource/authority/file-type/CSV"
+    },
+    "language": [
+     {
+      "id": "DEU",
+      "label": "Deutsch",
+      "resource": "http://publications.europa.eu/resource/authority/language/DEU"
+     }
+    ],
+    "title": {
+     "de": "OGDEXT_VORNAMEN_1"
+    },
+    "access_url": [
+     "https://data.statistik.gv.at/data/OGDEXT_VORNAMEN_1.csv"
+    ]
+   },
+   {
+    "id": "629a907b-d6c4-4bc1-b4ec-2117f4a5a1fc",
+    "description": {
+     "de": "C-JAHR-0:Jahr;C-WOHNBEZIRK-0:Politischer Bezirk;C-GESCHLECHT-0:Geschlecht;F-VORNAME_NORMALISIERT:Vorname normalisiert;F-ANZAHL_LGEB:Anzahl Lebendgeborene"
+    },
+    "format": {
+     "id": "CSV",
+     "label": "CSV",
+     "resource": "http://publications.europa.eu/resource/authority/file-type/CSV"
+    },
+    "language": [
+     {
+      "id": "DEU",
+      "label": "Deutsch",
+      "resource": "http://publications.europa.eu/resource/authority/language/DEU"
+     }
+    ],
+    "title": {
+     "de": "OGDEXT_VORNAMEN_1_C-JAHR-0"
+    },
+    "access_url": [
+     "https://data.statistik.gv.at/data/OGDEXT_VORNAMEN_1_C-JAHR-0.csv"
+    ]
+   },
+   {
+    "id": "7c5bde41-e296-4924-9587-c0434ebfd8e6",
+    "description": {
+     "de": "C-JAHR-0:Jahr;C-WOHNBEZIRK-0:Politischer Bezirk;C-GESCHLECHT-0:Geschlecht;F-VORNAME_NORMALISIERT:Vorname normalisiert;F-ANZAHL_LGEB:Anzahl Lebendgeborene"
+    },
+    "format": {
+     "id": "CSV",
+     "label": "CSV",
+     "resource": "http://publications.europa.eu/resource/authority/file-type/CSV"
+    },
+    "language": [
+     {
+      "id": "DEU",
+      "label": "Deutsch",
+      "resource": "http://publications.europa.eu/resource/authority/language/DEU"
+     }
+    ],
+    "title": {
+     "de": "OGDEXT_VORNAMEN_1_C-GESCHLECHT-0"
+    },
+    "access_url": [
+     "https://data.statistik.gv.at/data/OGDEXT_VORNAMEN_1_C-GESCHLECHT-0.csv"
+    ]
+   },
+   {
+    "id": "801a53b6-d3bd-4573-95fc-b8f5d0944d54",
+    "description": {
+     "de": "C-JAHR-0:Jahr;C-WOHNBEZIRK-0:Politischer Bezirk;C-GESCHLECHT-0:Geschlecht;F-VORNAME_NORMALISIERT:Vorname normalisiert;F-ANZAHL_LGEB:Anzahl Lebendgeborene"
+    },
+    "format": {
+     "id": "CSV",
+     "label": "CSV",
+     "resource": "http://publications.europa.eu/resource/authority/file-type/CSV"
+    },
+    "language": [
+     {
+      "id": "DEU",
+      "label": "Deutsch",
+      "resource": "http://publications.europa.eu/resource/authority/language/DEU"
+     }
+    ],
+    "title": {
+     "de": "OGDEXT_VORNAMEN_1_C-WOHNBEZIRK-0"
+    },
+    "access_url": [
+     "https://data.statistik.gv.at/data/OGDEXT_VORNAMEN_1_C-WOHNBEZIRK-0.csv"
+    ]
+   }
+  ],
+  "is_hvd": false,
+  "quality_meas": null,
+  "technical_contact": null,
+  "procedure_description": null,
+  "publisher": {
+   "type": "Agent",
+   "name": "Statistik Austria"
+  },
+  "was_generated_by": null,
+  "page": null,
+  "has_quality_annotation": null,
+  "spatial_resolution_in_meters": null,
+  "contact_point": [
+   {
+    "type": "Organization",
+    "url": [
+     "https://www.statistik.at/kontakt"
+    ],
+    "email": "open.data@statistik.gv.at",
+    "name": "Statistik Austria, Guglgasse 13, 1110 Wien, Austria"
+   }
+  ],
+  "catalog_record": {
+   "modified": "2026-07-10T01:50:19Z",
+   "issued": "2025-10-14T10:01:39Z"
+  },
+  "translation_meta": {
+   "details": {
+    "de": {
+     "machine_translated": false
+    }
+   },
+   "full_available_languages": [
+    "de"
+   ],
+   "status": "unknown"
+  },
+  "description": {
+   "de": "Erste Vornamen Neugeborener nach Geburtsjahr, Geschlecht und politischem Bezirk ab 1984: 1984 bis 2009 nur Babys mit österreichischer Staatsbürgerschaft; ab 2010 alle Babys. Die regionale Zuordnung zum politischen Bezirk erfolgt nach dem Wohnort der Mutter zum Zeitpunkt der Geburt. Bei Vornamen, die pro Jahr seltener als vier Mal vorkommen, wird nur die Anzahl pro Jahr für Österreich angezeigt."
+  },
+  "version_notes": null,
+  "originator": null,
+  "availability": null,
+  "title": {
+   "de": "Vornamen"
+  },
+  "has_version": null,
+  "geocoding_description": null,
+  "accrual_periodicity": null,
+  "access_right": null,
+  "open_data_presence": null,
+  "political_geocoding_level_uri": null,
+  "contributor": null,
+  "provenance": [
+   {
+    "label": "Die Statistik der Vornamen wurde bis 2014 auf Basis der Meldungen der Standesämter Österreichs über Lebendgeborene (Anzeige der Geburt) erstellt. Mit Umstellung am 1. November 2014 auf das Zentrale Personenstandsregister als neue Datenquelle werden ab 2015 neben in Österreich stattfindenden Geburten auch im Ausland geborene Babys von in Österreich wohnhaften Müttern erfasst. Dafür wurden die jeweils ersten Vornamen aller Babys in Original-Schreibweise ohne Sonderzeichen unabhängig von ihrer Staatsangehörigkeit berücksichtigt. Um gleichlautende Vornamen mit unterschiedlichen Sonderzeichen zusammenführen zu können, werden diese normalisiert, d.h. auf mögliche einfache ASCII-Zeichen zurückgeführt (transkodiert)."
+   }
+  ],
+  "categories": [
+   {
+    "id": "SOCI",
+    "label": {
+     "mt": "Popolazzjoni u soċjetà",
+     "en": "Population and society",
+     "nn": "Befolkning og samfunn",
+     "nl": "Bevolking en samenleving",
+     "da": "Befolkning og samfund",
+     "lt": "Gyventojų skaičius ir visuomenė",
+     "sl": "Prebivalstvo in družba",
+     "bg": "Население и общество",
+     "it": "Popolazione e società",
+     "nb": "Befolkning og samfunn",
+     "de": "Bevölkerung und Gesellschaft",
+     "et": "Elanikkond ja ühiskond",
+     "ga": "Daonra agus sochaí",
+     "hr": "Stanovništvo i društvo",
+     "fr": "Population et société",
+     "ro": "Populaţie şi societate",
+     "pt": "População e sociedade",
+     "fi": "Väestö ja yhteiskunta",
+     "pl": "Ludność i społeczeństwo",
+     "hu": "Népesség és társadalom",
+     "sv": "Befolkning och samhälle",
+     "lv": "Iedzīvotāji un sabiedrība",
+     "cs": "Populace a společnost",
+     "es": "Población y sociedad",
+     "sk": "Obyvateľstvo a spoločnosť",
+     "el": "Πληθυσμός και κοινωνία",
+     "no": "Befolkning og samfunn"
+    },
+    "resource": "http://publications.europa.eu/resource/authority/data-theme/SOCI"
+   }
+  ],
+  "adms_identifier": null,
+  "attribute": null,
+  "deadline": null,
+  "qualified_attribution": null,
+  "dimension": null,
+  "creator": null,
+  "digital_ark": null,
+  "datacontainer": null,
+  "bin_id": null,
+  "landing_page": [
+   {
+    "resource": "https://www.statistik.at/statistiken/bevoelkerung-und-soziales/bevoelkerung/geburten/vornamen-der-geborenen"
+   }
+  ],
+  "version_info": null,
+  "quality_process_uri": null,
+  "sample": null,
+  "extended_metadata": null,
+  "num_series": null,
+  "conforms_to": null,
+  "applicable_legislation": null,
+  "contributor_id": null
+ }
+}

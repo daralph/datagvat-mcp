@@ -1,0 +1,20 @@
+services:
+  api:
+    # LibreChat muss DATAGVAT_MCP_TOKEN ebenfalls kennen (normalerweise ueber env_file: .env), damit der Header unten gesetzt wird
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+    depends_on:
+      - mcp-datagvat
+
+  mcp-datagvat:
+    build: ./datagvat-mcp
+    container_name: mcp-datagvat
+    restart: unless-stopped
+    environment:
+      - MCP_TRANSPORT=streamable-http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      # Pflicht: ohne Token verweigert der Server den Start (z. B. 'openssl rand -hex 32' in die .env als DATAGVAT_MCP_TOKEN)
+      - MCP_AUTH_TOKEN=${DATAGVAT_MCP_TOKEN:?DATAGVAT_MCP_TOKEN in .env setzen}
