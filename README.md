@@ -36,7 +36,7 @@ uv run --no-project --with pytest --with pytest-asyncio --with "mcp[cli]>=1.30,<
 # gegen die echte API
 ... pytest -m live
 ```
-Die Tests laufen mit beiden mcp-Hauptversionen (199 offline, 4 live). Mit 2.x sind Attribute der Python-Clients snake_case (`is_error`), auf dem Draht bleibt es camelCase (`isError`).
+Die Tests laufen mit beiden mcp-Hauptversionen (201 offline, 4 live). Mit 2.x sind Attribute der Python-Clients snake_case (`is_error`), auf dem Draht bleibt es camelCase (`isError`).
 
 ## Sicherheit
 - SSRF: Jede URL und jede Weiterleitung (max. 5) wird per DNS auf öffentliche IPs geprüft (`ipaddress.is_global`, zusätzlich NAT64 gesperrt). Die verbindliche Prüfung läuft beim Verbindungsaufbau: der Server löst den Host selbst auf, prüft alle Adressen und verbindet auf genau diese IP (TLS/SNI weiter über den Hostnamen). Damit ist DNS-Rebinding ausgeschlossen. Proxy-/netrc-Umgebung wird ignoriert (`trust_env=False`), Unix-Sockets sind gesperrt.

@@ -7,7 +7,7 @@
 - Empfehlungstext unterscheidet zwischen anderen Jahrgängen und anderen Varianten einer Datei.
 - Abhängigkeiten per `datagvat_mcp.py.lock` festgeschrieben; Docker baut mit `--locked`, startet `--offline`.
 - CI über GitHub Actions (mcp 1.x und 2.x, Docker-Build, wöchentlich Live-Tests).
-- 199 Offline-Tests, 4 Live-Tests.
+- 201 Offline-Tests, 4 Live-Tests.
 
 ## 0.4.0 (2026-10-14)
 - Erste Version: Suche, Details, Schema, SQL; CSV/JSON/Parquet/Excel/ZIP; SSRF-Schutz mit IP-Pinning; Bearer-Token für HTTP.

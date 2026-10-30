@@ -31,6 +31,7 @@ import threading
 import time
 import zipfile
 import zlib
+import contextlib
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -843,7 +844,11 @@ async def _check_distribution_links(dists: list[dict[str, Any]]) -> tuple[int, b
     async def run(client: httpx.AsyncClient, d: dict[str, Any]) -> None:
         nonlocal checked, any_ok
         async with sem:
-            result = await _check_link(client, d["url"])
+            try:
+                result = await _check_link(client, d["url"])
+            except Exception:  # unerwartet: nie die anderen Pruefungen abbrechen
+                logger.exception("Link-Pruefung fehlgeschlagen fuer %s", d["url"])
+                result = {"ok": False, "status": "nicht pruefbar"}
         checked += 1
         any_ok = any_ok or result["ok"]
         d["link_status"] = result["status"]
@@ -943,13 +948,14 @@ atexit.register(_cache_clear)
 
 @asynccontextmanager
 async def _cached_download(
-    url: str, fmt_hint: str = "", member: str = "", sheet: str = "", skip_rows: int = -1
+    url: str, fmt_hint: str = "", member: str = "", sheet: str = "", skip_rows: int = -1, slot: bool = True
 ):
     """Liefert (Pfad, Endung, Info) der aufbereiteten Datei. Die Rohdatei einer URL wird innerhalb der TTL nur
     einmal geladen (auch fuer verschiedene Archivdateien/Blaetter), parallele Anfragen teilen sich den Download.
     Fehlgeschlagene Downloads werden nicht gemerkt."""
     key = hashlib.sha256(url.encode()).hexdigest()
-    async with _slots():
+    # slot=False: der Aufrufer haelt bereits einen Slot (mehrere Dateien in einem Aufruf, sonst Selbstblockade).
+    async with _slots() if slot else contextlib.nullcontext():
         lock = _download_locks.setdefault(key, asyncio.Lock())
         async with lock:
             entry = _cache.get(key)
@@ -1172,13 +1178,20 @@ def _jsonable(obj: Any) -> dict[str, Any]:
     return json.loads(json.dumps(obj, ensure_ascii=False, default=str), parse_constant=lambda _: None)
 
 
-_PATH_RE = re.compile(r"(?<![\w)\].:/])/(?:[^\s'\"/]+/)+[^\s'\"]*")
+_PATH_RE = re.compile(r"(?P<url>\b[a-z][a-z0-9+.-]*://[^\s'\"]+)|(?<![\w)\].])/(?:[^\s'\"/]+/)+[^\s'\"]*", re.I)
 
 
 def _clean_error(exc: BaseException) -> str:
     """Fehlertext ohne lokale Pfade (Temp, Home) und ohne DuckDB-Quelltextauszug (LINE n: ...)."""
     text = str(exc).split("\nLINE ")[0]
-    return _PATH_RE.sub("<Datei>", text).strip()
+    # http(s)-URLs bleiben stehen, file:// und andere Schemata sowie lokale Pfade werden maskiert.
+    def repl(m: re.Match[str]) -> str:
+        url = m.group("url")
+        if url and url.lower().startswith(("http://", "https://")):
+            return url
+        return "<Datei>"
+
+    return _PATH_RE.sub(repl, text).strip()
 
 
 def _error(message: str, **info: Any) -> CallToolResult:
@@ -1558,14 +1571,14 @@ async def query_distribution_sql(
         if not (extra_url or "").strip():
             return _error(f"extra_tables['{name}']: URL darf nicht leer sein.")
     try:
-        async with AsyncExitStack() as stack:
+        async with _slots(), AsyncExitStack() as stack:
             path, ext, info = await stack.enter_async_context(
-                _cached_download(url, format_hint, archive_member, sheet, skip_rows)
+                _cached_download(url, format_hint, archive_member, sheet, skip_rows, slot=False)
             )
             extra: list[tuple[str, Path, str]] = []
             for name, extra_url in extras.items():
                 try:
-                    epath, eext, _einfo = await stack.enter_async_context(_cached_download(extra_url))
+                    epath, eext, _einfo = await stack.enter_async_context(_cached_download(extra_url, slot=False))
                 except _SelectionNeeded as exc:
                     return _error(f"Zusatztabelle '{name}': {exc}", **exc.info)
                 except Exception as exc:

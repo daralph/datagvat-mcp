@@ -1708,3 +1708,28 @@ async def test_details_equal_peers_without_distinct_years_say_variants(transport
     assert "1 weitere gleichartige" in out["recommendation"]
     assert "andere Varianten, siehe 'title'" in out["recommendation"]
     assert "gewaehlt wurde die erste" in out["recommendation"]
+
+
+async def test_extra_tables_use_one_slot_no_self_deadlock(transport, monkeypatch) -> None:
+    # Frueher belegte jede Datei einen eigenen Slot: mit MAX_PARALLEL=1 hing der Aufruf fuer immer.
+    monkeypatch.setattr(m, "MAX_PARALLEL", 1)
+    m._slot_sem.clear()
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/daten.csv":
+            return httpx.Response(200, content=b"code;wert\n1;10\n")
+        return httpx.Response(200, content=b"code;name\n1;Wien\n")
+
+    transport(handler)
+    extras = {f"t{i}": f"http://93.184.216.34/t{i}.csv" for i in range(3)}
+    out = _data(await asyncio.wait_for(m.query_distribution_sql(
+        url="http://93.184.216.34/daten.csv", sql_query="SELECT COUNT(*) AS n FROM dataset JOIN t0 USING (code)", extra_tables=extras,
+    ), timeout=20))
+    assert out["results"] == [{"n": 1}]
+    m._slot_sem.clear()
+
+
+def test_clean_error_masks_file_urls_but_keeps_http_urls() -> None:
+    text = m._clean_error(ValueError("IO Error: file:///private/var/folders/x/datagvat-1/a.csv und https://data.statistik.gv.at/data/x.csv"))
+    assert "/private" not in text and "file:" not in text
+    assert "https://data.statistik.gv.at/data/x.csv" in text
