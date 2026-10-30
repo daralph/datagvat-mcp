@@ -7,7 +7,7 @@ Lädt CSV-/JSON-/Parquet-Distributionen sowie ZIP-Archive und Excel-Dateien (`.x
 | Tool | Zweck |
 |---|---|
 | `search_datasets` | Katalogsuche mit Filtern `publisher`, `format`, `category`, `loadable_only`, `sort`; liefert Titel, Publisher, Formate, `has_loadable_data` und eine Facetten-Übersicht |
-| `get_dataset_details` | Distributionen mit `url`, `format`, `license`, `byte_size`, sortiert nach Eignung (`rank`, `role`, `usable`, `note`) plus `recommended_url` |
+| `get_dataset_details` | Distributionen mit `url`, `format`, `license`, `byte_size`, sortiert nach Eignung (`rank`, `role`, `usable`, `note`) plus `recommended_url`; mit `check_links=True` zusätzlich `link_status` je Distribution und `links_checked` (Links werden per Range-GET geprüft, tote Links sind nicht `usable`) |
 | `inspect_distribution_schema` | Spalten, Typen, Zeilenzahl, 5 Beispielzeilen (höchstens 20 Spalten, Texte auf 80 Zeichen gekürzt, Hinweis `sample_note`); bei ZIP/Excel zusätzlich `source` (Archivdatei, Blätter) |
 | `query_distribution_sql` | Genau ein SELECT/WITH/DESCRIBE/SUMMARIZE, max. 200 Zeilen, 30 s |
 
@@ -58,6 +58,7 @@ Die Tests laufen mit beiden mcp-Hauptversionen (177 offline, 4 live). Mit 2.x si
 | `DATAGVAT_CACHE_TTL` | 900 | Cache-Lebensdauer je URL (s), 0 = aus |
 | `DATAGVAT_CACHE_MAX_BYTES` | 209715200 (200 MB) | Größe des Datei-Caches |
 | `DATAGVAT_RETRIES` | 2 | Zusätzliche Versuche bei 429/502/503/504 und Netzfehlern |
+| `DATAGVAT_LINK_CHECK_TIMEOUT` | 8 | Timeout je Link-Prüfung bei `check_links` (s); Gesamtlimit je Link das Doppelte |
 | `MCP_TRANSPORT` | `stdio` | `stdio`, `streamable-http` oder `sse` |
 | `MCP_HOST` / `MCP_PORT` | `127.0.0.1` / `8000` | Bind-Adresse (nur HTTP) |
 | `MCP_AUTH_TOKEN` | – | Bearer-Token (HTTP, mind. 16 Zeichen) |

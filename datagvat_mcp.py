@@ -77,6 +77,9 @@ CACHE_MAX_BYTES = int(os.getenv("DATAGVAT_CACHE_MAX_BYTES", str(200 * 1024 * 102
 RETRY_ATTEMPTS = int(os.getenv("DATAGVAT_RETRIES", "2"))  # zusaetzliche Versuche nach dem ersten
 RETRY_STATUSES = frozenset({429, 502, 503, 504})
 RETRY_MAX_DELAY = 10.0
+LINK_CHECK_TIMEOUT = float(os.getenv("DATAGVAT_LINK_CHECK_TIMEOUT", "8"))  # je Link: HTTP-Timeout, Gesamtlimit das Doppelte
+LINK_CHECK_MAX = 20  # hoechstens so viele Distributions-Links pro Datensatz pruefen
+LINK_CHECK_PARALLEL = 6  # gleichzeitige Link-Pruefungen
 __version__ = "0.4.0"
 USER_AGENT = f"datagvat-mcp/{__version__} (+https://www.data.gv.at/)"
 
@@ -767,6 +770,80 @@ async def _download_with_deadline(url: str) -> tuple[Path, str]:
         raise ValueError(f"Der Download dauerte laenger als {DOWNLOAD_DEADLINE:.0f} s und wurde abgebrochen.") from exc
 
 
+async def _check_link(client: httpx.AsyncClient, url: str) -> dict:
+    """Prueft per Range-GET (hoechstens 4096 Bytes), ob hinter dem Link eine Datei liegt. Kein HEAD, keine Wiederholungen."""
+    try:
+        async with asyncio.timeout(LINK_CHECK_TIMEOUT * 2):
+            current = url
+            redirected = False
+            head = b""
+            for _ in range(MAX_REDIRECTS + 1):
+                await asyncio.to_thread(_validate_public_url, current)
+                async with client.stream(
+                    "GET", current, headers={"Range": "bytes=0-4095"}, timeout=httpx.Timeout(LINK_CHECK_TIMEOUT)
+                ) as resp:
+                    if resp.is_redirect:
+                        location = resp.headers.get("location")
+                        if not location:
+                            return {"ok": False, "status": "Weiterleitung ohne Ziel"}
+                        current = str(httpx.URL(current).join(location))
+                        redirected = True
+                        continue
+                    suffix = f" (weitergeleitet auf {httpx.URL(current).host})" if redirected else ""
+                    if resp.status_code == 416:  # Range Not Satisfiable: Datei existiert
+                        return {"ok": True, "status": "ok" + suffix}
+                    if not 200 <= resp.status_code < 300:
+                        return {"ok": False, "status": f"tot (HTTP {resp.status_code})"}
+                    head = b""
+                    async for chunk in resp.aiter_bytes(4096):
+                        head += chunk
+                        if len(head) >= 4096:
+                            break
+                if head.startswith((_ZIP_MAGIC, _OLE_MAGIC)):
+                    return {"ok": True, "status": "ok" + suffix}
+                problem = _sniff_unsupported(head)
+                if problem:
+                    return {"ok": False, "status": f"liefert keine Datei: {problem}{suffix}"}
+                return {"ok": True, "status": "ok" + suffix}
+            return {"ok": False, "status": "zu viele Weiterleitungen"}
+    except ValueError:
+        return {"ok": False, "status": "gesperrt (keine oeffentliche Adresse)"}
+    except (TimeoutError, httpx.HTTPError, httpx.InvalidURL):
+        return {"ok": False, "status": "nicht erreichbar"}
+
+
+async def _check_distribution_links(dists: list[dict[str, Any]]) -> tuple[int, bool]:
+    """Prueft die Links der gerankten Distributionen (max. LINK_CHECK_MAX, davon max. LINK_CHECK_PARALLEL parallel).
+    Liefert (Anzahl der Pruefungen, ob mindestens ein Link ok war); tote Links sind danach nicht mehr usable."""
+    sem = asyncio.Semaphore(LINK_CHECK_PARALLEL)
+    checked = 0
+    any_ok = False
+
+    async def run(client: httpx.AsyncClient, d: dict[str, Any]) -> None:
+        nonlocal checked, any_ok
+        async with sem:
+            result = await _check_link(client, d["url"])
+        checked += 1
+        any_ok = any_ok or result["ok"]
+        d["link_status"] = result["status"]
+        if not result["ok"] and d.get("usable"):
+            d["usable"] = False
+            d["note"] = f"{d['note']}; {result['status']}" if d.get("note") else result["status"]
+
+    async with _client() as client:
+        tasks = []
+        for d in dists:
+            if not d.get("url"):
+                d["link_status"] = "nicht geprueft (keine URL)"
+            elif len(tasks) < LINK_CHECK_MAX:
+                tasks.append(asyncio.create_task(run(client, d)))
+            else:
+                d["link_status"] = f"nicht geprueft (mehr als {LINK_CHECK_MAX} Dateien)"
+        if tasks:
+            await asyncio.gather(*tasks)
+    return checked, any_ok
+
+
 async def _download_to_temp(
     url: str, fmt_hint: str = "", member: str = "", sheet: str = "", skip_rows: int = -1
 ) -> tuple[Path, str]:
@@ -1290,11 +1367,13 @@ async def search_datasets(
     description=(
         "Ruft Metadaten und Distributionen (url, format, license, byte_size) fuer eine dataset_id aus "
         "search_datasets ab. Distributionen sind nach Eignung sortiert (rank, role, usable, note); "
-        "'recommended_url' ist die beste direkt ladbare Datendatei."
+        "'recommended_url' ist die beste direkt ladbare Datendatei. Mit check_links=True werden die Links vorab "
+        "per kurzer Range-Anfrage geprueft (Ergebnis je Distribution in 'link_status')."
     ),
 )
 async def get_dataset_details(
     dataset_id: Annotated[str, Field(description="Exakte Datensatz-ID aus search_datasets.")],
+    check_links: Annotated[bool, Field(description="Prueft vorab per kurzer Anfrage, ob die Links erreichbar sind und eine Datei liefern (langsamer). Ergebnis je Distribution in 'link_status'.")] = False,
 ) -> dict[str, Any]:
     async with _client() as client:
         try:
@@ -1313,30 +1392,39 @@ async def get_dataset_details(
     ds = payload.get("result", payload)
     pub = ds.get("publisher")
     dists = _rank_distributions([_distribution(d) for d in ds.get("distributions") or [] if isinstance(d, dict)])
+    links_checked = 0
+    any_link_ok = False
+    if check_links:
+        links_checked, any_link_ok = await _check_distribution_links(dists)
     best = next((d for d in dists if d["usable"] and d["role"] == "data"), None)
     peers = [d for d in dists if best and d["usable"] and d["role"] == "data" and d["format_detected"] == best["format_detected"]]
-    return _jsonable(
-        {
-            "id": ds.get("id"),
-            "title": _extract_localized(ds.get("title")),
-            "description": _extract_localized(ds.get("description")),
-            "publisher": pub.get("name") if isinstance(pub, dict) else pub,
-            "modified": ds.get("modified"),
-            "recommended_url": best["url"] if best else None,
-            "recommendation": (
-                f"Beste Datendatei: Rang {best['rank']} ({best['format_detected']})."
-                + (
-                    f" Es gibt {len(peers) - 1} weitere gleichartige Dateien (z. B. andere Jahre, siehe 'year'); "
-                    "gewaehlt wurde die neueste. Passend zur Frage waehlen."
-                    if len(peers) > 1
-                    else ""
-                )
-                if best
-                else "Keine direkt ladbare Datendatei (CSV/JSON/Parquet) vorhanden; Quelle und Links nennen statt raten."
-            ),
-            "distributions": dists,
-        }
-    )
+    if best:
+        recommendation = (
+            f"Beste Datendatei: Rang {best['rank']} ({best['format_detected']})."
+            + (
+                f" Es gibt {len(peers) - 1} weitere gleichartige Dateien (z. B. andere Jahre, siehe 'year'); "
+                "gewaehlt wurde die neueste. Passend zur Frage waehlen."
+                if len(peers) > 1
+                else ""
+            )
+        )
+    else:
+        recommendation = "Keine direkt ladbare Datendatei (CSV/JSON/Parquet) vorhanden; Quelle und Links nennen statt raten."
+        if check_links and links_checked and not any_link_ok:
+            recommendation += " Alle geprueften Links sind tot oder liefern keine Datei; Datensatz-Seite auf data.gv.at nennen."
+    out: dict[str, Any] = {
+        "id": ds.get("id"),
+        "title": _extract_localized(ds.get("title")),
+        "description": _extract_localized(ds.get("description")),
+        "publisher": pub.get("name") if isinstance(pub, dict) else pub,
+        "modified": ds.get("modified"),
+        "recommended_url": best["url"] if best else None,
+        "recommendation": recommendation,
+        "distributions": dists,
+    }
+    if check_links:
+        out["links_checked"] = links_checked
+    return _jsonable(out)
 
 
 @mcp.tool(

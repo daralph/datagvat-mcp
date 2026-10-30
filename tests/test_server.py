@@ -730,6 +730,106 @@ async def test_details_mention_equal_peers(transport) -> None:
     assert "2 weitere gleichartige" in out["recommendation"]
 
 
+# ---------- Link-Pruefung (check_links) ----------
+
+
+async def test_details_without_check_links_has_no_link_status(transport) -> None:
+    calls = transport(lambda req: httpx.Response(200, json={"result": {"id": "x", "distributions": [
+        {"id": "1", "format": {"id": "CSV"}, "access_url": [PUBLIC]},
+    ]}}))
+    out = _data(await m.get_dataset_details(dataset_id="x"))
+    assert "links_checked" not in out
+    assert all("link_status" not in d for d in out["distributions"])
+    assert len(calls) == 1, "ohne check_links darf kein Distributions-Link angefragt werden"
+
+
+async def test_check_links_reports_ok_for_csv_file(transport) -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "/datasets/" in req.url.path:
+            return httpx.Response(200, json={"result": {"id": "x", "distributions": [
+                {"id": "1", "format": {"id": "CSV"}, "access_url": [PUBLIC]},
+            ]}})
+        return httpx.Response(200, content=b"a;b\n1;2\n")
+
+    transport(handler)
+    out = _data(await m.get_dataset_details(dataset_id="x", check_links=True))
+    d = out["distributions"][0]
+    assert d["link_status"] == "ok" and d["usable"] is True
+    assert out["links_checked"] == 1 and out["recommended_url"] == PUBLIC
+
+
+async def test_check_links_marks_dead_link_and_recommends_next_usable(transport) -> None:
+    dead, good = "http://93.184.216.34/dead.csv", "http://93.184.216.34/good.csv"
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "/datasets/" in req.url.path:
+            return httpx.Response(200, json={"result": {"id": "x", "distributions": [
+                {"id": "1", "format": {"id": "CSV"}, "access_url": [dead]},
+                {"id": "2", "format": {"id": "CSV"}, "access_url": [good]},
+            ]}})
+        if req.url.path == "/dead.csv":
+            return httpx.Response(404)
+        return httpx.Response(200, content=b"a;b\n1;2\n")
+
+    transport(handler)
+    out = _data(await m.get_dataset_details(dataset_id="x", check_links=True))
+    by_url = {d["url"]: d for d in out["distributions"]}
+    assert by_url[dead]["link_status"] == "tot (HTTP 404)"
+    assert by_url[dead]["usable"] is False and "tot (HTTP 404)" in by_url[dead]["note"]
+    assert by_url[good]["link_status"] == "ok" and by_url[good]["usable"] is True
+    assert out["recommended_url"] == good and out["links_checked"] == 2
+
+
+async def test_check_links_detects_redirect_to_html_landing_page(transport) -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "/datasets/" in req.url.path:
+            return httpx.Response(200, json={"result": {"id": "x", "distributions": [
+                {"id": "1", "format": {"id": "CSV"}, "access_url": [PUBLIC]},
+            ]}})
+        if req.url.path == "/daten.csv":
+            return httpx.Response(302, headers={"location": "http://93.184.216.34/"})
+        return httpx.Response(200, content=b"<!DOCTYPE html><html><body>Portal</body></html>")
+
+    transport(handler)
+    out = _data(await m.get_dataset_details(dataset_id="x", check_links=True))
+    d = out["distributions"][0]
+    assert d["link_status"].startswith("liefert keine Datei: HTML-Seite")
+    assert d["usable"] is False and out["recommended_url"] is None
+    assert "Alle geprueften Links sind tot oder liefern keine Datei" in out["recommendation"]
+
+
+async def test_check_links_blocks_redirect_to_private_ip(transport) -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "/datasets/" in req.url.path:
+            return httpx.Response(200, json={"result": {"id": "x", "distributions": [
+                {"id": "1", "format": {"id": "CSV"}, "access_url": [PUBLIC]},
+            ]}})
+        return httpx.Response(302, headers={"location": "http://127.0.0.1:8080/secret.csv"})
+
+    calls = transport(handler)
+    out = _data(await m.get_dataset_details(dataset_id="x", check_links=True))
+    d = out["distributions"][0]
+    assert d["link_status"] == "gesperrt (keine oeffentliche Adresse)" and d["usable"] is False
+    assert all("127.0.0.1" not in c for c in calls), "Die interne Adresse darf nie angefragt werden"
+
+
+async def test_check_links_sends_range_header(transport) -> None:
+    ranges: list[str | None] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "/datasets/" in req.url.path:
+            return httpx.Response(200, json={"result": {"id": "x", "distributions": [
+                {"id": "1", "format": {"id": "CSV"}, "access_url": [PUBLIC]},
+            ]}})
+        ranges.append(req.headers.get("range"))
+        return httpx.Response(200, content=b"a;b\n1;2\n")
+
+    transport(handler)
+    await m.get_dataset_details(dataset_id="x", check_links=True)
+    assert ranges == ["bytes=0-4095"]
+
+
+
 # ---------- MCP-Protokoll: Annotations, strukturierte Antworten, isError ----------
 
 
