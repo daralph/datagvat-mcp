@@ -19,7 +19,7 @@ Du greifst über den MCP-Server `data-gv-at` (Tools erscheinen in Claude Code al
    - Derselbe Titel kommt oft in mehreren Ständen oder Zeiträumen vor (z. B. „…2008-2022 nach Bundesländern…“ in mehreren Varianten). Mit `limit` bis 50 alle Treffer ansehen und nach Zeitraum im Titel und `modified` wählen; der gesuchte Kurztitel passt selten exakt.
 
 2. **`get_dataset_details`** mit der `id`
-   - Die Distributionen sind schon nach Eignung sortiert. **`recommended_url`** ist die beste Datendatei, nimm sie, sofern sie zur Frage passt. Ist sie `null`, gibt es keine direkt ladbare Tabelle: sag das offen und nenne Quelle samt Link, statt zu raten.
+   - Die Distributionen sind schon nach Eignung sortiert. **`recommended_url`** ist die beste Datendatei, nimm sie, sofern sie zur Frage passt. Ist sie `null`, gibt es keine direkt ladbare Tabelle: sag das offen und nenne Quelle samt Link, statt zu raten. Scheitert das Laden (404, HTML statt Datei), `get_dataset_details` mit `check_links=True` aufrufen: tote Links werden markiert, die Empfehlung weicht auf eine erreichbare Datei aus.
    - Pro Distribution: `usable` (ladbar), `role` (`data` = Hauptdaten, `dimension` = Codeliste, `header` = nur Spaltenbeschreibung, `other` = nicht ladbar), `note` (Grund) und `rank`.
    - Format-Rangfolge ist `PARQUET` > `CSV` > `JSON`/`GEOJSON` > Excel (`XLSX`/`XLS`) > `ZIP`. ZIP und Excel funktionieren, sind aber Notlösungen. Nicht ladbar sind `PDF`, `HTML`, `XML`, `WMS`/`WFS` und Archive ohne Tabellendatei.
    - Gibt es viele gleichartige Dateien (typisch: eine pro Jahr), steht in `recommendation` ein Hinweis und jede Distribution trägt `year` (nur ein Hinweis aus Titel/Dateiname: die höchste dort genannte Jahreszahl, bei „ab_2008“ also 2008, obwohl die Datei mehrere Jahre enthält; den echten Zeitraum per `SELECT DISTINCT` prüfen). Wähle das Jahr, das zur Frage passt, nicht blind die empfohlene (neueste) Datei. Für Mehrjahresvergleiche jedes Jahr einzeln abfragen und die Ergebnisse selbst zusammenführen.
@@ -48,7 +48,7 @@ Du greifst über den MCP-Server `data-gv-at` (Tools erscheinen in Claude Code al
    - **Summen und Gesamtzeilen:** `GROUP BY ROLLUP(…)` nie zusammen mit einem zusätzlichen `GROUP BY` derselben Spalten schreiben, das vervielfacht die Zeilen. Entweder nur `GROUP BY ROLLUP(a, b)` oder `GROUP BY GROUPING SETS ((a, b), (a), ())`. Gesamtzeilen haben `NULL` in den Gruppierungsspalten.
    - **Durchschnitte:** immer `SUM(Betrag) / SUM(Fallzahl)` über die zugehörige Fallzahlspalte, nie den Mittelwert von Mittelwerten. Bei Statistik Austria gehört zu `F-X` meist `F-Z_X` (Fallzahl). Passen Betrags- und Fallzahlspalte nicht zusammen (z. B. Fälle mit positivem Einkommen gegen alle Fälle), sag das dazu.
    - Prüfe das Ergebnis auf doppelte Zeilen und auf `NULL`, bevor du Zahlen nennst.
-   - Codespalten (z. B. Bezirks- oder Geschlechtscodes) lassen sich oft nur über die Dimensionsdatei `…_C-…csv` entschlüsseln. Lade sie bei Bedarf separat und verknüpfe im Kopf, nicht per SQL (jede Abfrage sieht nur eine Datei).
+   - Codespalten (z. B. Bezirks- oder Geschlechtscodes) lassen sich oft nur über die Dimensionsdatei `…_C-…csv` entschlüsseln. `get_dataset_details` liefert sie in `lookup_tables` (Name → URL). Gib sie in `query_distribution_sql` als `extra_tables` mit (höchstens 3) und verknüpfe per JOIN, z. B. `JOIN wohnbezirk b ON b.code = dataset."C-WOHNBEZIRK-0"`. Spalten der Codeliste vorher mit `inspect_distribution_schema` prüfen (meist `code`, `name`).
 
 ## Quellenangabe (immer)
 - Titel des Datensatzes und Publisher.

@@ -31,7 +31,7 @@ import threading
 import time
 import zipfile
 import zlib
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -80,7 +80,7 @@ RETRY_MAX_DELAY = 10.0
 LINK_CHECK_TIMEOUT = float(os.getenv("DATAGVAT_LINK_CHECK_TIMEOUT", "8"))  # je Link: HTTP-Timeout, Gesamtlimit das Doppelte
 LINK_CHECK_MAX = 20  # hoechstens so viele Distributions-Links pro Datensatz pruefen
 LINK_CHECK_PARALLEL = 6  # gleichzeitige Link-Pruefungen
-__version__ = "0.4.0"
+__version__ = "1.0.0"
 USER_AGENT = f"datagvat-mcp/{__version__} (+https://www.data.gv.at/)"
 
 # Nur fuer Tests: ersetzt den HTTP-Transport (httpx.MockTransport).
@@ -229,6 +229,27 @@ def _year_hint(dist: dict[str, Any]) -> int | None:
     stem = Path(urlparse(dist.get("url") or "").path).stem
     years = re.findall(r"(?<![A-Za-z0-9])((?:19|20)\d\d)(?![A-Za-z0-9])", f"{dist.get('title') or ''} {stem}")
     return max(map(int, years)) if years else None
+
+
+def _lookup_table_name(url: str, used: set[str]) -> str:
+    """Tabellenname fuer eine Codelisten-URL: Statistik-Austria-Muster '..._C-<NAME>-<n>.csv' -> '<name>'."""
+    stem = Path(urlparse(url or "").path).stem
+    m = re.search(r"_C-(.+)-\d+$", stem, re.I)
+    name = re.sub(r"[^a-z0-9_]", "_", m.group(1).lower())[:30] if m else ""
+    if not name:
+        i = 1
+        while f"lookup{i}" in used:
+            i += 1
+        name = f"lookup{i}"
+    elif not name[0].isalpha():
+        name = ("t_" + name)[:30]
+    if name in used:
+        i = 2
+        while f"{name}_{i}" in used:
+            i += 1
+        name = f"{name}_{i}"
+    used.add(name)
+    return name
 
 
 def _assess_distribution(dist: dict[str, Any]) -> dict[str, Any]:
@@ -966,8 +987,28 @@ async def _cached_download(
             _cache_evict()
 
 
-def _create_sandboxed_duckdb(file_path: Path, ext: str) -> duckdb.DuckDBPyConnection:
-    """In-Memory DuckDB: Datei als Tabelle 'dataset' laden, danach externe Zugriffe sperren."""
+def _load_table(con: duckdb.DuckDBPyConnection, name: str, path: Path, ext: str) -> None:
+    """Laedt eine aufbereitete Datei als Tabelle '<name>' (doppelt gequoteter Identifier)."""
+    escaped_path = str(path).replace("'", "''")
+    quoted = '"' + name.replace('"', '""') + '"'
+    if ext == ".parquet":
+        con.execute(f"CREATE TABLE {quoted} AS SELECT * FROM read_parquet('{escaped_path}');")
+    elif ext == ".json":
+        con.execute(f"CREATE TABLE {quoted} AS SELECT * FROM read_json_auto('{escaped_path}');")
+    else:
+        csv_sql = "CREATE TABLE {tbl} AS SELECT * FROM read_csv_auto('{path}', sample_size=20000, ignore_errors=true{opts});"
+        try:
+            con.execute(csv_sql.format(tbl=quoted, path=escaped_path, opts=""))
+        except duckdb.InvalidInputException:
+            # Z. B. Steuerzeichen am Dateiende (Statistik-Austria-Codelisten): lockerer Parser statt Abbruch.
+            con.execute(f"DROP TABLE IF EXISTS {quoted};")
+            con.execute(csv_sql.format(tbl=quoted, path=escaped_path, opts=", strict_mode=false"))
+
+
+def _create_sandboxed_duckdb(
+    file_path: Path, ext: str, extra: list[tuple[str, Path, str]] | None = None
+) -> duckdb.DuckDBPyConnection:
+    """In-Memory DuckDB: Datei als Tabelle 'dataset' laden (plus Zusatztabellen), danach externe Zugriffe sperren."""
     con = duckdb.connect(":memory:")
     timer = threading.Timer(QUERY_TIMEOUT_SECONDS * 2, con.interrupt)
     try:
@@ -975,20 +1016,10 @@ def _create_sandboxed_duckdb(file_path: Path, ext: str) -> duckdb.DuckDBPyConnec
         con.execute("SET max_temp_directory_size = '1GB';")  # Auslagerung auf Platte begrenzen
         con.execute("SET threads = 2;")
 
-        escaped_path = str(file_path).replace("'", "''")
         timer.start()
-        if ext == ".parquet":
-            con.execute(f"CREATE TABLE dataset AS SELECT * FROM read_parquet('{escaped_path}');")
-        elif ext == ".json":
-            con.execute(f"CREATE TABLE dataset AS SELECT * FROM read_json_auto('{escaped_path}');")
-        else:
-            csv_sql = "CREATE TABLE dataset AS SELECT * FROM read_csv_auto('{path}', sample_size=20000, ignore_errors=true{opts});"
-            try:
-                con.execute(csv_sql.format(path=escaped_path, opts=""))
-            except duckdb.InvalidInputException:
-                # Z. B. Steuerzeichen am Dateiende (Statistik-Austria-Codelisten): lockerer Parser statt Abbruch.
-                con.execute("DROP TABLE IF EXISTS dataset;")
-                con.execute(csv_sql.format(path=escaped_path, opts=", strict_mode=false"))
+        _load_table(con, "dataset", file_path, ext)
+        for name, path, ext2 in extra or []:
+            _load_table(con, name, path, ext2)
         timer.cancel()
 
         con.execute("SET enable_external_access = false;")
@@ -1004,8 +1035,8 @@ def _create_sandboxed_duckdb(file_path: Path, ext: str) -> duckdb.DuckDBPyConnec
         timer.cancel()
 
 
-def _open_dataset(file_path: Path, ext: str) -> duckdb.DuckDBPyConnection:
-    con = _create_sandboxed_duckdb(file_path, ext)
+def _open_dataset(file_path: Path, ext: str, extra: list[tuple[str, Path, str]] | None = None) -> duckdb.DuckDBPyConnection:
+    con = _create_sandboxed_duckdb(file_path, ext, extra)
     try:
         empty = ext == ".csv" and con.execute("SELECT COUNT(*) FROM dataset;").fetchone()[0] == 0
     except BaseException:
@@ -1083,8 +1114,10 @@ def _check_single_select(con: duckdb.DuckDBPyConnection, sql: str) -> str:
     return sql
 
 
-def _query_sync(file_path: Path, ext: str, sql: str) -> dict[str, Any]:
-    con = _open_dataset(file_path, ext)
+def _query_sync(
+    file_path: Path, ext: str, sql: str, extra: list[tuple[str, Path, str]] | None = None
+) -> dict[str, Any]:
+    con = _open_dataset(file_path, ext, extra)
     timer = threading.Timer(QUERY_TIMEOUT_SECONDS, con.interrupt)
     try:
         checked = _check_single_select(con, sql)
@@ -1139,7 +1172,7 @@ def _jsonable(obj: Any) -> dict[str, Any]:
     return json.loads(json.dumps(obj, ensure_ascii=False, default=str), parse_constant=lambda _: None)
 
 
-_PATH_RE = re.compile(r"(?<![\w)\].])/(?:[^\s'\"/]+/)+[^\s'\"]*")
+_PATH_RE = re.compile(r"(?<![\w)\].:/])/(?:[^\s'\"/]+/)+[^\s'\"]*")
 
 
 def _clean_error(exc: BaseException) -> str:
@@ -1399,19 +1432,31 @@ async def get_dataset_details(
     best = next((d for d in dists if d["usable"] and d["role"] == "data"), None)
     peers = [d for d in dists if best and d["usable"] and d["role"] == "data" and d["format_detected"] == best["format_detected"]]
     if best:
-        recommendation = (
-            f"Beste Datendatei: Rang {best['rank']} ({best['format_detected']})."
-            + (
+        peer_years = {d["year"] for d in peers if d.get("year")}
+        if len(peers) > 1 and len(peer_years) > 1:
+            peer_note = (
                 f" Es gibt {len(peers) - 1} weitere gleichartige Dateien (z. B. andere Jahre, siehe 'year'); "
                 "gewaehlt wurde die neueste. Passend zur Frage waehlen."
-                if len(peers) > 1
-                else ""
             )
-        )
+        elif len(peers) > 1:
+            peer_note = (
+                f" Es gibt {len(peers) - 1} weitere gleichartige Dateien (andere Varianten, siehe 'title'); "
+                "gewaehlt wurde die erste. Passend zur Frage waehlen."
+            )
+        else:
+            peer_note = ""
+        recommendation = f"Beste Datendatei: Rang {best['rank']} ({best['format_detected']})." + peer_note
     else:
         recommendation = "Keine direkt ladbare Datendatei (CSV/JSON/Parquet) vorhanden; Quelle und Links nennen statt raten."
         if check_links and links_checked and not any_link_ok:
             recommendation += " Alle geprueften Links sind tot oder liefern keine Datei; Datensatz-Seite auf data.gv.at nennen."
+    lookup_tables: dict[str, str] = {}
+    used_names: set[str] = set()
+    for d in dists:
+        if d["role"] == "dimension" and d["usable"] and d.get("url") and len(lookup_tables) < 10:
+            lookup_tables[_lookup_table_name(d["url"], used_names)] = d["url"]
+    if lookup_tables:
+        recommendation += " Codes entschluesseln: Codelisten aus 'lookup_tables' per extra_tables in query_distribution_sql mitladen und joinen."
     out: dict[str, Any] = {
         "id": ds.get("id"),
         "title": _extract_localized(ds.get("title")),
@@ -1422,6 +1467,8 @@ async def get_dataset_details(
         "recommendation": recommendation,
         "distributions": dists,
     }
+    if lookup_tables:
+        out["lookup_tables"] = lookup_tables
     if check_links:
         out["links_checked"] = links_checked
     return _jsonable(out)
@@ -1468,7 +1515,9 @@ async def inspect_distribution_schema(
     description=(
         "Fuehrt eine schreibgeschuetzte DuckDB-SQL-Abfrage gegen die Tabelle 'dataset' einer "
         "CSV-, JSON-, Parquet-, Excel- oder ZIP-Distribution aus (max. 200 Ergebniszeilen). Nutze vorab "
-        "inspect_distribution_schema, um die exakten Spaltennamen zu kennen."
+        "inspect_distribution_schema, um die exakten Spaltennamen zu kennen. Ueber extra_tables lassen sich "
+        "bis zu 3 weitere Dateien (z. B. Codelisten aus get_dataset_details) als eigene Tabellen laden und "
+        "per JOIN mit 'dataset' verbinden."
     ),
 )
 async def query_distribution_sql(
@@ -1487,11 +1536,47 @@ async def query_distribution_sql(
     skip_rows: Annotated[
         int, Field(ge=-1, le=1000, description="Nur bei Excel: nicht leere Zeilen ueber der Kopfzeile ueberspringen (Titelzeilen). -1 = automatisch erkennen.")
     ] = -1,
+    extra_tables: Annotated[
+        dict[str, str] | None,
+        Field(
+            description=(
+                "Optional: weitere Dateien als zusaetzliche Tabellen, Name -> URL, hoechstens 3. Fuer Codelisten "
+                "(role 'dimension' aus get_dataset_details), z. B. {\"bezirk\": \"https://.../..._C-WOHNBEZIRK-0.csv\"}. "
+                "Danach per JOIN nutzbar. Nur einfache Dateien (CSV/JSON/Parquet/Excel/ZIP mit einer Datei), ohne archive_member/sheet."
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
+    extras = extra_tables or {}
+    if len(extras) > 3:
+        return _error(f"extra_tables darf hoechstens 3 Eintraege haben, es sind {len(extras)}.")
+    for name, extra_url in extras.items():
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,29}", name or ""):
+            return _error(f"Ungueltiger Tabellenname '{name}' in extra_tables: erlaubt ist ^[a-z][a-z0-9_]{{0,29}}$ (1-30 Zeichen).")
+        if name == "dataset":
+            return _error("Der Tabellenname 'dataset' in extra_tables ist reserviert (Haupttabelle).")
+        if not (extra_url or "").strip():
+            return _error(f"extra_tables['{name}']: URL darf nicht leer sein.")
     try:
-        async with _cached_download(url, format_hint, archive_member, sheet, skip_rows) as (path, ext, info):
-            result = await asyncio.to_thread(_query_sync, path, ext, sql_query)
-            return _jsonable({**result, "source": info} if info else result)
+        async with AsyncExitStack() as stack:
+            path, ext, info = await stack.enter_async_context(
+                _cached_download(url, format_hint, archive_member, sheet, skip_rows)
+            )
+            extra: list[tuple[str, Path, str]] = []
+            for name, extra_url in extras.items():
+                try:
+                    epath, eext, _einfo = await stack.enter_async_context(_cached_download(extra_url))
+                except _SelectionNeeded as exc:
+                    return _error(f"Zusatztabelle '{name}': {exc}", **exc.info)
+                except Exception as exc:
+                    logger.error("Fehler in Zusatztabelle '%s': %s", name, exc)
+                    return _error(f"Zusatztabelle '{name}': {_clean_error(exc)}")
+                extra.append((name, epath, eext))
+            result = await asyncio.to_thread(_query_sync, path, ext, sql_query, extra)
+            out = _jsonable({**result, "source": info} if info else result)
+            if extras:
+                out["tables"] = {"dataset": url, **extras}
+            return out
     except _SelectionNeeded as exc:
         return _error(str(exc), **exc.info)
     except Exception as exc:

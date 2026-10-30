@@ -1548,3 +1548,163 @@ async def test_unused_download_locks_are_dropped(transport) -> None:
     m._download_locks["alt"] = asyncio.Lock()
     m._cache_evict()
     assert "alt" not in m._download_locks
+
+
+# ---------- Zusatztabellen (extra_tables) und Codelisten ----------
+
+
+async def test_query_joins_dataset_with_extra_table(transport) -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/daten.csv":
+            return httpx.Response(200, content=b"code;wert\n901;10\n902;20\n")
+        return httpx.Response(200, content=b"code;name\n901;Wien\n902;Graz\n")
+
+    transport(handler)
+    out = _data(await m.query_distribution_sql(
+        url="http://93.184.216.34/daten.csv",
+        sql_query="SELECT b.name, a.wert FROM dataset a JOIN bezirk b ON a.code = b.code ORDER BY 1",
+        extra_tables={"bezirk": "http://93.184.216.34/bezirke.csv"},
+    ))
+    assert out["results"] == [{"name": "Graz", "wert": 20}, {"name": "Wien", "wert": 10}]
+    assert out["tables"] == {"dataset": "http://93.184.216.34/daten.csv", "bezirk": "http://93.184.216.34/bezirke.csv"}
+
+
+async def test_query_supports_up_to_three_extra_tables(transport) -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/daten.csv":
+            return httpx.Response(200, content=b"code;wert\n1;10\n")
+        return httpx.Response(200, content=b"code;name\n1;Wien\n")
+
+    transport(handler)
+    extras = {f"t{i}": f"http://93.184.216.34/t{i}.csv" for i in range(3)}
+    out = _data(await m.query_distribution_sql(
+        url="http://93.184.216.34/daten.csv",
+        sql_query="SELECT COUNT(*) AS n FROM dataset d JOIN t0 ON d.code = t0.code JOIN t1 ON d.code = t1.code JOIN t2 ON d.code = t2.code",
+        extra_tables=extras,
+    ))
+    assert out["results"] == [{"n": 1}]
+    assert set(out["tables"]) == {"dataset", "t0", "t1", "t2"}
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"a": "http://93.184.216.34/a.csv", "b": "http://93.184.216.34/b.csv", "c": "http://93.184.216.34/c.csv", "d": "http://93.184.216.34/d.csv"},
+        {"1bezirk": "http://93.184.216.34/b.csv"},
+        {"Bezirk": "http://93.184.216.34/b.csv"},
+        {"be-zirk": "http://93.184.216.34/b.csv"},
+        {"dataset": "http://93.184.216.34/b.csv"},
+        {"bezirk": ""},
+    ],
+)
+async def test_query_extra_tables_validation_errors(transport, extra) -> None:
+    calls = transport(lambda req: httpx.Response(200, content=CSV_BODY))
+    out = _data(await m.query_distribution_sql(url=PUBLIC, sql_query="SELECT * FROM dataset", extra_tables=extra))
+    assert "error" in out and calls == [], "bei ungueltigen extra_tables darf nichts geladen werden"
+
+
+async def test_query_extra_table_error_names_the_table(transport) -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/daten.csv":
+            return httpx.Response(200, content=CSV_BODY)
+        return httpx.Response(404)
+
+    transport(handler)
+    out = _data(await m.query_distribution_sql(
+        url="http://93.184.216.34/daten.csv",
+        sql_query="SELECT * FROM dataset",
+        extra_tables={"bezirk": "http://93.184.216.34/kaputt.csv"},
+    ))
+    assert "Zusatztabelle 'bezirk'" in out["error"]
+
+
+async def test_query_extra_table_with_multi_file_zip_asks_for_selection_with_prefix(transport) -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/daten.csv":
+            return httpx.Response(200, content=CSV_BODY)
+        return httpx.Response(200, content=_zip_bytes({"a.csv": b"x;y\n1;2\n", "b.csv": b"x;y\n3;4\n"}))
+
+    transport(handler)
+    out = _data(await m.query_distribution_sql(
+        url="http://93.184.216.34/daten.csv",
+        sql_query="SELECT * FROM dataset",
+        extra_tables={"bezirk": "http://93.184.216.34/archiv.zip"},
+    ))
+    assert "Zusatztabelle 'bezirk'" in out["error"] and len(out["archive_members"]) == 2
+
+
+async def test_empty_extra_table_does_not_trigger_the_empty_check(transport) -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/daten.csv":
+            return httpx.Response(200, content=CSV_BODY)
+        return httpx.Response(200, content=b"code;name\n")
+
+    transport(handler)
+    out = _data(await m.query_distribution_sql(
+        url="http://93.184.216.34/daten.csv",
+        sql_query="SELECT COUNT(*) AS n FROM bezirk",
+        extra_tables={"bezirk": "http://93.184.216.34/leer.csv"},
+    ))
+    assert out["results"] == [{"n": 0}]
+
+
+def test_sandbox_with_extra_tables_blocks_external_access() -> None:
+    main = _csv_file("a;b\n1;2\n")
+    extra = _csv_file("code;name\n1;Wien\n")
+    try:
+        con = _create_sandboxed_duckdb(main, ".csv", [("bezirk", extra, ".csv")])
+        assert con.execute("SELECT name FROM bezirk;").fetchall() == [("Wien",)]
+        with pytest.raises(duckdb.Error):
+            con.execute("SELECT * FROM read_csv_auto('/etc/hosts');")
+        con.close()
+    finally:
+        main.unlink(missing_ok=True)
+        extra.unlink(missing_ok=True)
+
+
+# ---------- lookup_tables, Pfad-Maskierung, Peer-Hinweis ----------
+
+
+async def test_details_expose_lookup_tables_for_dimension_files(transport) -> None:
+    payload = {"result": {"id": "x", "distributions": [
+        {"id": "1", "format": {"id": "CSV"}, "access_url": ["https://data.statistik.gv.at/data/OGDEXT_X_1.csv"]},
+        {"id": "2", "format": {"id": "CSV"}, "access_url": ["https://data.statistik.gv.at/data/OGDEXT_X_1_C-WOHNBEZIRK-0.csv"]},
+        {"id": "3", "format": {"id": "CSV"}, "access_url": ["https://data.statistik.gv.at/data/OGDEXT_X_1_C-JAHR-0.csv"]},
+    ]}}
+    transport(lambda req: httpx.Response(200, json=payload))
+    out = _data(await m.get_dataset_details(dataset_id="x"))
+    assert out["lookup_tables"] == {
+        "wohnbezirk": "https://data.statistik.gv.at/data/OGDEXT_X_1_C-WOHNBEZIRK-0.csv",
+        "jahr": "https://data.statistik.gv.at/data/OGDEXT_X_1_C-JAHR-0.csv",
+    }
+    assert "lookup_tables" in out["recommendation"] and "extra_tables" in out["recommendation"]
+
+
+def test_lookup_table_name_derivation() -> None:
+    used: set[str] = set()
+    assert m._lookup_table_name("https://x.at/a_C-WOHNBEZIRK-0.csv", used) == "wohnbezirk"
+    assert m._lookup_table_name("https://x.at/b_C-WOHNBEZIRK-0.csv", used) == "wohnbezirk_2"
+    assert m._lookup_table_name("https://x.at/c_C-9CODE-1.csv", used) == "t_9code"
+    assert m._lookup_table_name("https://x.at/d_C-A.B-C-3.csv", used) == "a_b_c"
+    assert m._lookup_table_name("https://x.at/e.csv", used) == "lookup1"
+    assert m._lookup_table_name("https://x.at/f.csv", used) == "lookup2"
+    assert m._lookup_table_name("https://x.at/g_C-" + "A" * 40 + "-0.csv", used) == "a" * 30
+
+
+def test_clean_error_keeps_urls_but_hides_local_paths() -> None:
+    text = m._clean_error(ValueError("Client error '404 Not Found' for url 'https://www.wien.gv.at/gogv/abc'"))
+    assert "https://www.wien.gv.at/gogv/abc" in text
+    masked = m._clean_error(ValueError("open /private/var/folders/x/datagvat-1/abc.csv failed"))
+    assert "/private/var" not in masked and "<Datei>" in masked
+
+
+async def test_details_equal_peers_without_distinct_years_say_variants(transport) -> None:
+    payload = {"result": {"id": "x", "distributions": [
+        {"id": "1", "format": {"id": "CSV"}, "access_url": ["https://x.at/a.csv"], "title": {"de": "Variante A"}},
+        {"id": "2", "format": {"id": "CSV"}, "access_url": ["https://x.at/b.csv"], "title": {"de": "Variante B"}},
+    ]}}
+    transport(lambda req: httpx.Response(200, json=payload))
+    out = _data(await m.get_dataset_details(dataset_id="x"))
+    assert "1 weitere gleichartige" in out["recommendation"]
+    assert "andere Varianten, siehe 'title'" in out["recommendation"]
+    assert "gewaehlt wurde die erste" in out["recommendation"]

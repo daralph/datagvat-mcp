@@ -1,15 +1,15 @@
 # datagvat-mcp
 
-MCP-Server (Version 0.4.0) für den österreichischen Open-Data-Katalog [data.gv.at](https://www.data.gv.at/) (Piveau hub-search).
+MCP-Server (Version 1.0.0) für den österreichischen Open-Data-Katalog [data.gv.at](https://www.data.gv.at/) (Piveau hub-search).
 Lädt CSV-/JSON-/Parquet-Distributionen sowie ZIP-Archive und Excel-Dateien (`.xlsx`/`.xls`) und wertet sie mit DuckDB aus (Tabelle `dataset`, In-Memory, ohne Datei-/Netzzugriff).
 
 ## Tools
 | Tool | Zweck |
 |---|---|
 | `search_datasets` | Katalogsuche mit Filtern `publisher`, `format`, `category`, `loadable_only`, `sort`; liefert Titel, Publisher, Formate, `has_loadable_data` und eine Facetten-Übersicht |
-| `get_dataset_details` | Distributionen mit `url`, `format`, `license`, `byte_size`, sortiert nach Eignung (`rank`, `role`, `usable`, `note`) plus `recommended_url`; mit `check_links=True` zusätzlich `link_status` je Distribution und `links_checked` (Links werden per Range-GET geprüft, tote Links sind nicht `usable`) |
+| `get_dataset_details` | Distributionen mit `url`, `format`, `license`, `byte_size`, sortiert nach Eignung (`rank`, `role`, `usable`, `note`) plus `recommended_url`; `lookup_tables` (Codelisten, Name → URL) bei Statistik-Austria-Daten; mit `check_links=True` zusätzlich `link_status` je Distribution und `links_checked` (Links werden per Range-GET geprüft, tote Links sind nicht `usable`) |
 | `inspect_distribution_schema` | Spalten, Typen, Zeilenzahl, 5 Beispielzeilen (höchstens 20 Spalten, Texte auf 80 Zeichen gekürzt, Hinweis `sample_note`); bei ZIP/Excel zusätzlich `source` (Archivdatei, Blätter) |
-| `query_distribution_sql` | Genau ein SELECT/WITH/DESCRIBE/SUMMARIZE, max. 200 Zeilen, 30 s |
+| `query_distribution_sql` | Genau ein SELECT/WITH/DESCRIBE/SUMMARIZE, max. 200 Zeilen, 30 s; mit `extra_tables` (Name → URL, höchstens 3) weitere Dateien als eigene Tabellen laden und per JOIN verbinden, z. B. Codelisten aus `lookup_tables` |
 
 Ressource: `datagvat://dataset/{id}` (DCAT-AP JSON-LD).
 
@@ -36,7 +36,7 @@ uv run --no-project --with pytest --with pytest-asyncio --with "mcp[cli]>=1.30,<
 # gegen die echte API
 ... pytest -m live
 ```
-Die Tests laufen mit beiden mcp-Hauptversionen (177 offline, 4 live). Mit 2.x sind Attribute der Python-Clients snake_case (`is_error`), auf dem Draht bleibt es camelCase (`isError`).
+Die Tests laufen mit beiden mcp-Hauptversionen (199 offline, 4 live). Mit 2.x sind Attribute der Python-Clients snake_case (`is_error`), auf dem Draht bleibt es camelCase (`isError`).
 
 ## Sicherheit
 - SSRF: Jede URL und jede Weiterleitung (max. 5) wird per DNS auf öffentliche IPs geprüft (`ipaddress.is_global`, zusätzlich NAT64 gesperrt). Die verbindliche Prüfung läuft beim Verbindungsaufbau: der Server löst den Host selbst auf, prüft alle Adressen und verbindet auf genau diese IP (TLS/SNI weiter über den Hostnamen). Damit ist DNS-Rebinding ausgeschlossen. Proxy-/netrc-Umgebung wird ignoriert (`trust_env=False`), Unix-Sockets sind gesperrt.
@@ -64,7 +64,7 @@ Die Tests laufen mit beiden mcp-Hauptversionen (177 offline, 4 live). Mit 2.x si
 | `MCP_AUTH_TOKEN` | – | Bearer-Token (HTTP, mind. 16 Zeichen) |
 | `MCP_ALLOW_NO_AUTH` | – | `1` erlaubt Nicht-Loopback ohne Token |
 
-Hinweis: Das Docker-Image löst `mcp` beim Build gleitend auf (`mcp<3`, kein Lockfile); der Build ist daher nicht bitgenau reproduzierbar.
+Abhängigkeiten sind in `datagvat_mcp.py.lock` festgeschrieben (`uv lock --script datagvat_mcp.py`). Das Docker-Image baut mit `--locked` und startet `--offline`, also genau mit diesen Versionen. Aktualisieren: `uv lock --script --upgrade datagvat_mcp.py`, danach Tests laufen lassen (wegen des IP-Pinnings besonders bei httpx/httpcore). CI (`.github/workflows/tests.yml`) testet bei jedem Push gegen mcp 1.x und 2.x und baut das Image, wöchentlich zusätzlich gegen die echte API.
 
 ## Bekannte Eigenheiten der Daten
 - Statistik Austria liefert pro Datensatz `*_HEADER.csv` (Metadaten) neben der Datendatei und Dimensionsdateien `*_C-…csv`. Die Datendatei ist `…_1.csv` ohne Zusatz.
