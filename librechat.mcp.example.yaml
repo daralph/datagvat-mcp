@@ -5,7 +5,7 @@ mcpServers:
   datagvat:
     type: streamable-http
     url: "http://mcp-datagvat:8000/mcp"
-    timeout: 60000
+    timeout: 150000   # Downloads duerfen bis 120 s dauern
     initTimeout: 15000
     chatMenu: true
     requiresOAuth: false
@@ -15,5 +15,8 @@ mcpServers:
       Workflow fuer oesterreichische Open Data (data.gv.at):
       1. Suche Datensaetze mit search_datasets.
       2. Hole Distributionen mit get_dataset_details und nimm recommended_url (Feld 'url' je Distribution).
+         Scheitert das Laden (404, HTML statt Datei), get_dataset_details mit check_links=true wiederholen.
       3. Pruefe bei CSV/JSON/Excel/ZIP immer zuerst das Schema via inspect_distribution_schema.
       4. Werte Daten gezielt per SQL ueber query_distribution_sql auf der Tabelle 'dataset' aus.
+      5. Codes (z. B. Bezirkscodes) mit den Codelisten aus 'lookup_tables' entschluesseln:
+         per extra_tables mitladen und per JOIN verbinden.

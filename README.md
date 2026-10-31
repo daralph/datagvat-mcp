@@ -27,6 +27,40 @@ Absoluter `uv`-Pfad nötig, Claude Code startet ohne Login-Shell-PATH.
 - Docker: `DATAGVAT_MCP_TOKEN` in die `.env`, `docker-compose.librechat.yml` reicht es als `MCP_AUTH_TOKEN` durch, `librechat.mcp.example.yaml` setzt den Header. Der Healthcheck prüft nur den TCP-Port. Getestet (2026-10-14, Docker 29.8 auf macOS): Image-Build samt Selftest, Lauf als `nobody`, Healthcheck `healthy`, Start ohne Token verweigert (Exit 2), HTTP 401 ohne/mit falschem Token, Tool-Aufruf mit Token gegen data.gv.at, Compose-Datei mit Stub-Basis und Pflicht-Token. Nicht getestet: echte LibreChat-Instanz (`headers: Authorization`).
 - **Wiederholungen:** Katalog-Anfragen und Downloads werden bei 429/502/503/504 und Netzwerkfehlern bis zu `DATAGVAT_RETRIES` (Standard 2) Mal wiederholt, mit Wartezeit 0,5 s, 1 s, … (höchstens 10 s). Ein `Retry-After` in Sekunden hat Vorrang. Andere Fehler (404, 403, 500) werden sofort gemeldet. Bei abgebrochenen Downloads beginnt der Versuch von vorn.
 
+## LibreChat einrichten (Schritt für Schritt)
+Voraussetzung: eine LibreChat-Installation per Docker Compose (Ordner mit `docker-compose.yml`, `.env` und `librechat.yaml`).
+
+1. **Server-Ordner ablegen:** dieses Repo als Unterordner `datagvat-mcp` in den LibreChat-Ordner klonen:
+   ```
+   cd <LibreChat-Ordner>
+   git clone https://github.com/daralph/datagvat-mcp.git datagvat-mcp
+   ```
+2. **Token erzeugen** und in die LibreChat-`.env` eintragen:
+   ```
+   echo "DATAGVAT_MCP_TOKEN=$(openssl rand -hex 32)" >> .env
+   ```
+   LibreChat (Dienst `api`) liest die `.env` ohnehin ein, der MCP-Container bekommt das Token über die Compose-Datei.
+3. **Compose-Erweiterung:** `datagvat-mcp/docker-compose.librechat.yml` als `docker-compose.override.yml` in den LibreChat-Ordner kopieren. Gibt es dort schon eine Override-Datei, den Dienst `mcp-datagvat` und `depends_on` von Hand übernehmen.
+   ```
+   cp datagvat-mcp/docker-compose.librechat.yml docker-compose.override.yml
+   ```
+4. **MCP-Server anmelden:** den Block `mcpServers:` aus `datagvat-mcp/librechat.mcp.example.yaml` in die eigene `librechat.yaml` übernehmen (gibt es `mcpServers:` schon, nur den Eintrag `datagvat:` ergänzen). Die URL `http://mcp-datagvat:8000/mcp` passt zum Dienstnamen aus Schritt 3.
+5. **Starten:**
+   ```
+   docker compose up -d --build
+   docker compose ps                     # mcp-datagvat muss "healthy" sein
+   docker compose logs mcp-datagvat      # bei Problemen
+   ```
+6. **Prüfen:** In LibreChat einen Chat öffnen, im Chat-Menü den MCP-Server `datagvat` aktivieren und z. B. fragen: „Welche Vornamen waren zuletzt in Wien am häufigsten?“
+
+**Aktualisieren:** `cd datagvat-mcp && git pull && cd .. && docker compose up -d --build mcp-datagvat`.
+
+**Typische Fehler:**
+- `DATAGVAT_MCP_TOKEN in .env setzen`: Schritt 2 fehlt.
+- Container startet nicht, Exit-Code 2: Token fehlt oder ist kürzer als 16 Zeichen.
+- LibreChat meldet 401: In `librechat.yaml` fehlt der `headers`-Eintrag, oder `api` kennt die Variable nicht (`.env` im Dienst `api` eingebunden?).
+- Zeitüberschreitung bei großen Dateien: `timeout` in `librechat.yaml` erhöhen (Vorgabe im Beispiel 150 s).
+
 ## Tests
 ```
 # offline (mit mcp 2.x, wie der Server per uv aufgelöst wird)
