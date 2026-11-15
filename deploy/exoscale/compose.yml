@@ -1,0 +1,49 @@
+# datagvat-mcp eigenstaendig hinter Caddy (HTTPS). Start: docker compose --env-file .env up -d
+name: datagvat-mcp
+services:
+  mcp:
+    image: ghcr.io/daralph/datagvat-mcp:${MCP_IMAGE_TAG:-1.1}
+    restart: unless-stopped
+    init: true   # raeumt Zombie-Prozesse ab; python ist im Image der Hauptprozess und erhaelt SIGTERM
+    read_only: true   # geschrieben wird nur nach /tmp (Volume unten)
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8000"
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?MCP_AUTH_TOKEN in .env setzen}
+      MCP_STATELESS: "1"
+      # 512 MB DuckDB je Aufruf: auf einer 2-GB-Instanz hoechstens 2 Aufrufe mit Datei zugleich
+      DATAGVAT_MAX_PARALLEL: ${DATAGVAT_MAX_PARALLEL:-2}
+      # Optional: Abruf-Ziele einschraenken, z. B. gv.at,statistik.at (leer = alle oeffentlichen Hosts)
+      DATAGVAT_ALLOWED_HOSTS: ${DATAGVAT_ALLOWED_HOSTS:-}
+    volumes:
+      - mcp-tmp:/tmp   # Platte statt tmpfs: Auslagerung bis 1 GB wuerde sonst den RAM belegen
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${MCP_MEM_LIMIT:-1500m}
+    pids_limit: 256
+    networks: [internal]
+    logging: &logging
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [mcp]   # bewusst ohne Health-Bedingung: das Zertifikat wird parallel zum Start geholt
+    ports: ["80:80", "443:443"]
+    environment:
+      MCP_DOMAIN: ${MCP_DOMAIN:?MCP_DOMAIN in .env setzen}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [internal]
+    logging: *logging
+
+volumes:
+  mcp-tmp: {}
+  caddy-data: {}
+  caddy-config: {}
+networks:
+  internal: {}

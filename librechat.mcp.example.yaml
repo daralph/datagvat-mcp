@@ -1,3 +1,4 @@
+# Handweg: Fuer die Einrichtung in einem Befehl siehe deploy/librechat/install.sh
 version: 1.2.1
 cache: true
 

@@ -28,3 +28,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t datagvat-mcp .
+      - name: Rauchtest des Images, schreibgeschuetzt mit Volume fuer /tmp (wie deploy/exoscale)
+        run: bash deploy/smoke-test.sh datagvat-mcp
+      - name: Rauchtest des Images, schreibgeschuetzt mit tmpfs fuer /tmp (wie deploy/librechat)
+        run: TMP_ART=tmpfs bash deploy/smoke-test.sh datagvat-mcp
+      - name: Compose-Dateien und Caddyfile pruefen
+        run: |
+          MCP_AUTH_TOKEN=0123456789abcdef0123 MCP_DOMAIN=mcp.example.org docker compose -f deploy/exoscale/compose.yml config -q
+          docker run --rm -e MCP_DOMAIN=mcp.example.org -v "$PWD/deploy/exoscale/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
+      - name: LibreChat-Installer (Dateien, Wiederholung, Rueckbau)
+        run: bash deploy/librechat/test-install.sh

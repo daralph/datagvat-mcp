@@ -1,3 +1,4 @@
+# Handweg: Fuer die Einrichtung in einem Befehl siehe deploy/librechat/install.sh
 services:
   api:
     # LibreChat muss DATAGVAT_MCP_TOKEN ebenfalls kennen (normalerweise ueber env_file: .env), damit der Header unten gesetzt wird

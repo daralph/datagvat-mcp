@@ -1,0 +1,9 @@
+#cloud-config
+# datagvat-mcp auf einer frischen Ubuntu-Instanz (24.04). Als "User Data" beim Anlegen der Instanz angeben.
+# Das Token entsteht erst auf der Instanz (first-boot.sh) und steht weder hier noch im cloud-init-Log.
+package_update: true
+packages: [docker.io, docker-compose-v2, git, curl, openssl, unattended-upgrades]
+runcmd:
+  - [git, clone, --depth, "1", --branch, v1.1.0, "https://github.com/daralph/datagvat-mcp", /opt/datagvat-mcp]
+  - [sh, /opt/datagvat-mcp/deploy/exoscale/first-boot.sh]
+  - [sh, -c, "dpkg-reconfigure -f noninteractive unattended-upgrades && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"]
