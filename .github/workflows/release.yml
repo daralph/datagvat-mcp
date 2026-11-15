@@ -20,7 +20,8 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/daralph/datagvat-mcp
+          # Nur feste Marken X.Y.Z und X.Y, nie latest
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
@@ -32,3 +33,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -4,7 +4,8 @@ services:
   mcp:
     image: ghcr.io/daralph/datagvat-mcp:${MCP_IMAGE_TAG:-1.1}
     restart: unless-stopped
-    init: true   # leitet SIGTERM sicher weiter; "uv run" als PID 1 ist ungeprueft
+    init: true   # raeumt Zombie-Prozesse ab; python ist im Image der Hauptprozess und erhaelt SIGTERM
+    read_only: true   # geschrieben wird nur nach /tmp (Volume unten)
     environment:
       MCP_TRANSPORT: streamable-http
       MCP_HOST: 0.0.0.0

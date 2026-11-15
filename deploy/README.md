@@ -30,4 +30,4 @@ Das Skript erzeugt das Token, bindet den Dienst über eine eigene Compose-Datei 
 
 ## Prüfen
 
-`bash deploy/smoke-test.sh <image>` startet das Image mit der Härtung aus `compose.yml` und prüft Healthcheck, 401, `initialize` und den geordneten Stop. Die CI führt das bei jedem Push aus.
+`bash deploy/smoke-test.sh <image>` startet das Image mit der Härtung aus den Compose-Dateien (schreibgeschützt, `/tmp` als Volume, mit `TMP_ART=tmpfs` als tmpfs) und prüft Healthcheck, 401, `initialize` und den geordneten Stop. Die CI führt das bei jedem Push aus.

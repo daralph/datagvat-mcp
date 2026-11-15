@@ -28,11 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t datagvat-mcp .
-      - name: Rauchtest des Images (Healthcheck, 401, initialize, geordneter Stop)
+      - name: Rauchtest des Images, schreibgeschuetzt mit Volume fuer /tmp (wie deploy/exoscale)
         run: bash deploy/smoke-test.sh datagvat-mcp
-      - name: Rauchtest mit schreibgeschuetztem Dateisystem (nur Befund, blockiert nicht)
-        continue-on-error: true
-        run: READ_ONLY=1 bash deploy/smoke-test.sh datagvat-mcp
+      - name: Rauchtest des Images, schreibgeschuetzt mit tmpfs fuer /tmp (wie deploy/librechat)
+        run: TMP_ART=tmpfs bash deploy/smoke-test.sh datagvat-mcp
       - name: Compose-Dateien und Caddyfile pruefen
         run: |
           MCP_AUTH_TOKEN=0123456789abcdef0123 MCP_DOMAIN=mcp.example.org docker compose -f deploy/exoscale/compose.yml config -q

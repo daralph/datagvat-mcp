@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
-# Rauchtest fuer das Image mit derselben Haertung wie deploy/exoscale/compose.yml.
-# Aufruf: bash deploy/smoke-test.sh [image]   (READ_ONLY=1 prueft zusaetzlich ein schreibgeschuetztes Dateisystem)
+# Rauchtest fuer das Image mit derselben Haertung wie die Compose-Dateien: schreibgeschuetztes Dateisystem,
+# keine Capabilities, Limits, init. Das Token entsteht hier und wird nie ausgegeben.
+# Aufruf: bash deploy/smoke-test.sh [image]
+#   TMP_ART=volume (Standard, wie deploy/exoscale) oder TMP_ART=tmpfs (wie deploy/librechat) fuer /tmp
 set -euo pipefail
 IMAGE="${1:-datagvat-mcp}"
 PORT="${PORT:-18000}"
 TOKEN="$(openssl rand -hex 32)"
 NAME="datagvat-smoke-$$"
-EXTRA=()
-if [ "${READ_ONLY:-0}" = 1 ]; then EXTRA+=(--read-only); fi
-cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
+case "${TMP_ART:-volume}" in
+  volume) TMP_OPT=(-v /tmp) ;;
+  tmpfs)  TMP_OPT=(--tmpfs /tmp:rw,size=1300m,mode=1777) ;;
+  *) echo "FEHLER: TMP_ART muss volume oder tmpfs sein"; exit 2 ;;
+esac
+cleanup() { docker rm -f -v "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 t0=$(date +%s)
-docker run -d --name "$NAME" -p "127.0.0.1:${PORT}:8000" -v /tmp \
-  --cap-drop ALL --security-opt no-new-privileges --memory 1500m --pids-limit 256 --init \
-  "${EXTRA[@]}" -e MCP_AUTH_TOKEN="$TOKEN" -e MCP_STATELESS=1 "$IMAGE" >/dev/null
+docker run -d --name "$NAME" -p "127.0.0.1:${PORT}:8000" --read-only "${TMP_OPT[@]}" \
+  --cap-drop ALL --security-opt no-new-privileges --memory 2g --pids-limit 256 --init \
+  -e MCP_AUTH_TOKEN="$TOKEN" -e MCP_STATELESS=1 "$IMAGE" >/dev/null
 for i in $(seq 1 60); do
   if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then break; fi
   if [ "$i" = 60 ]; then echo "FEHLER: /healthz antwortet nicht"; docker logs "$NAME" 2>&1 | tail -30; exit 1; fi

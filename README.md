@@ -106,7 +106,7 @@ Die Tests laufen mit beiden mcp-Hauptversionen (234 offline, 4 live). Mit 2.x si
 `GET /healthz` antwortet im HTTP-Betrieb ohne Token mit Status und Version. Stand und offene Punkte des Serverbetriebs: `docs/serverbetrieb-analyse.md`.
 Betrieb auf einer VM (Exoscale) oder in LibreChat: `deploy/README.md`.
 
-Abhängigkeiten sind in `datagvat_mcp.py.lock` festgeschrieben (`uv lock --script datagvat_mcp.py`). Das Docker-Image baut mit `--locked` und startet `--offline`, also genau mit diesen Versionen. Aktualisieren: `uv lock --script --upgrade datagvat_mcp.py`, danach Tests laufen lassen (wegen des IP-Pinnings besonders bei httpx/httpcore). CI (`.github/workflows/tests.yml`) testet bei jedem Push gegen mcp 1.x und 2.x und baut das Image, wöchentlich zusätzlich gegen die echte API.
+Abhängigkeiten sind in `datagvat_mcp.py.lock` festgeschrieben (`uv lock --script datagvat_mcp.py`). Das Docker-Image installiert beim Build genau diese Versionen in ein venv (`uv export --locked`) und startet ohne `uv` direkt mit `python`. Aktualisieren: `uv lock --script --upgrade datagvat_mcp.py`, danach Tests laufen lassen (wegen des IP-Pinnings besonders bei httpx/httpcore). CI (`.github/workflows/tests.yml`) testet bei jedem Push gegen mcp 1.x und 2.x und baut das Image, wöchentlich zusätzlich gegen die echte API.
 
 ## Bekannte Eigenheiten der Daten
 - Statistik Austria liefert pro Datensatz `*_HEADER.csv` (Metadaten) neben der Datendatei und Dimensionsdateien `*_C-…csv`. Die Datendatei ist `…_1.csv` ohne Zusatz.

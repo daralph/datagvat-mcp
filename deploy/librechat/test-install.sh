@@ -35,7 +35,7 @@ valid_yaml "$WORK/lc/librechat.yaml"
 cp "$WORK/lc/.env" "$WORK/env1"; cp "$WORK/lc/librechat.yaml" "$WORK/yaml1"
 run "$WORK/lc" --no-start
 cmp -s "$WORK/lc/.env" "$WORK/env1" && cmp -s "$WORK/lc/librechat.yaml" "$WORK/yaml1" || fail "zweiter Lauf hat geaendert"
-[ "$(ls -d "$WORK"/lc/.datagvat-backup-* | wc -l)" = 1 ] || fail "Sicherung fehlt oder doppelt"
+[ "$(ls -d "$WORK"/lc/.datagvat-backup-* | wc -l | tr -d ' ')" = 1 ] || fail "Sicherung fehlt oder doppelt"
 run "$WORK/lc" --uninstall --no-start; same_as_before "Rueckbau Fall 1"
 
 # Fall 2: keine librechat.yaml, vorhandene Override-Datei
