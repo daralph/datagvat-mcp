@@ -8,10 +8,10 @@
 - `DATAGVAT_ALLOWED_HOSTS`: optionale Liste erlaubter Abruf-Ziele (Suffix-Abgleich), gilt für jede Weiterleitung.
 - SIGTERM beendet den HTTP-Server mit Exit-Code 0 und räumt Temp-Verzeichnis und Cache auf (vorher Exit -15 ohne Aufräumen).
 - Temp-Reste eines Vorgängers mit derselben PID werden beim Start entfernt (Container-Neustart).
-- Serverbetrieb: `deploy/` mit Compose und Caddy für eine VM, cloud-init, LibreChat-Installer, Rauchtest; `release.yml` veröffentlicht das Image nach GHCR.
+- Serverbetrieb: `deploy/` mit Compose und Caddy für eine VM, cloud-init, `up.sh`/`down.sh` für Exoscale, LibreChat-Installer, Rauchtest; `release.yml` veröffentlicht das Image nach GHCR.
 - Docker-Image zweistufig: Abhängigkeiten beim Build nach Lockfile in ein venv, Start mit `python` als PID 1 statt `uv run`. Läuft damit auch mit schreibgeschütztem Dateisystem (`read_only`), das in beiden Compose-Dateien gesetzt ist.
 - Docker-Healthcheck prüft `/healthz` statt nur den TCP-Port.
-- 234 Offline-Tests.
+- 240 Offline-Tests (inkl. Cloud-Metadaten-SSRF).
 
 ## 1.0.0 (2026-10-30)
 - `query_distribution_sql`: `extra_tables` lädt bis zu 3 weitere Dateien als eigene Tabellen, z. B. Codelisten zum JOIN mit `dataset`. Alle Tabellen werden vor dem Sperren der Sandbox geladen.

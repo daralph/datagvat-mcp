@@ -1386,6 +1386,26 @@ def test_nat64_range_is_blocked(monkeypatch) -> None:
         m._validate_public_url("http://nat64.example/x")
 
 
+@pytest.mark.parametrize("answer", [("169.254.169.254",), ("fe80::1",), ("fd00:ec2::254",)])
+async def test_cloud_metadata_service_is_blocked_at_connect_time(monkeypatch, answer) -> None:
+    """Bedrohungsbild 5: Der Metadaten-Dienst einer Cloud-Instanz (Link-Local) bleibt gesperrt,
+    auch wenn ein oefflicher Hostname erst beim Verbinden auf ihn zeigt."""
+    inner = _FakeInner()
+    monkeypatch.setattr(socket, "getaddrinfo", _addrinfo(*answer))
+    with pytest.raises(ValueError, match="blockiert"):
+        await m._PublicOnlyBackend(inner).connect_tcp("metadata.example", 80)
+    assert inner.connected == []
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://169.254.169.254/latest/user-data", "http://[fe80::1]/x", "http://[fd00:ec2::254]/latest/meta-data/"],
+)
+def test_cloud_metadata_service_is_blocked_as_literal_url(url) -> None:
+    with pytest.raises(ValueError):
+        m._validate_public_url(url)
+
+
 async def test_cache_entry_is_protected_while_it_is_being_prepared(transport, monkeypatch) -> None:
     """Parallele Aufrufe mit abgelaufener TTL duerfen sich nicht gegenseitig die Rohdatei loeschen."""
     transport(lambda req: httpx.Response(200, content=CSV_BODY))

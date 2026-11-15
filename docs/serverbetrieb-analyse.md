@@ -39,7 +39,6 @@ Schreibgeschütztes Dateisystem: `uv run --locked --offline` scheiterte am schre
 ## Offen
 
 - Tag `v1.1.0`, Image veröffentlichen und auf „public“ stellen.
-- Echter Lauf auf Exoscale und in LibreChat, Zeitmessung für 5 und 30 Minuten.
-- Ein-Befehl-Skripte `up.sh` und `down.sh` mit der `exo`-CLI.
-- Zertifikat ohne DNS-Wartezeit belegen (sslip.io oder IP-Zertifikat).
-- Abschlussbericht nach Abschnitt 9 des Auftrags.
+- Echter Lauf auf Exoscale (`deploy/exoscale/up.sh` / `down.sh`, bisher `bash -n`-geprüft) und in LibreChat, Zeitmessung für 5 und 30 Minuten.
+- Zertifikat ohne DNS-Wartezeit belegen (`sslip.io` oder IP-Zertifikat).
+- Abschlussbericht (`docs/abschlussbericht.md`) nach den Live-Messläufen um echte Laufzeiten ergänzen.

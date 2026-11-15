@@ -6,6 +6,9 @@ cd "$(dirname "$0")"
 umask 077
 if [ ! -f .env ]; then
   DOMAIN="${MCP_DOMAIN:-}"
+  if [ -z "$DOMAIN" ] && [ -f /etc/datagvat-domain ]; then
+    DOMAIN="$(tr -d '[:space:]' < /etc/datagvat-domain)"
+  fi
   if [ -z "$DOMAIN" ]; then
     # Ohne Domain: Hostname aus der IPv4-Adresse ueber einen Wildcard-DNS-Dienst (keine DNS-Wartezeit).
     IP=$(ip -4 route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')

@@ -6,17 +6,24 @@ Voraussetzung für beide Wege ist das veröffentlichte Image `ghcr.io/daralph/da
 
 ## Weg A: Exoscale (oder jede Ubuntu-VM mit öffentlicher IPv4)
 
+Mit eingerichteter `exo`-CLI in einem Befehl:
+
+```bash
+./deploy/exoscale/up.sh
+```
+
+Details (Voraussetzungen, eigene Domain, Token-Rotation, Rückbau): `deploy/exoscale/README.md`.
+
+Manuell ohne `exo`-CLI:
 1. Instanz mit Ubuntu 24.04 anlegen, Security Group mit 80 und 443 offen und 22 nur von der eigenen IP.
 2. Den Inhalt von `deploy/exoscale/cloud-init.yaml` als „User Data“ angeben.
 3. Nach dem Start per SSH: `sudo cat /opt/datagvat-mcp/deploy/exoscale/.env` zeigt Adresse und Token.
 
-Ohne eigene Domain bildet `first-boot.sh` den Hostnamen aus der IP über sslip.io. Ob die Zertifizierungsstelle dafür zuverlässig ausstellt, ist ungeprüft. Mit eigener Domain: DNS-Eintrag vorher setzen und `MCP_DOMAIN` vor `first-boot.sh` exportieren.
+Ohne eigene Domain bildet `first-boot.sh` den Hostnamen aus der IP über `sslip.io`. Ob die Zertifizierungsstelle dafür zuverlässig ausstellt, ist ungeprüft. Mit eigener Domain: `--domain <Host>` an `up.sh` übergeben oder DNS-Eintrag vorher setzen und `MCP_DOMAIN` vor `first-boot.sh` exportieren.
 
 Einbinden in claude.ai als Custom Connector: URL `https://<MCP_DOMAIN>/mcp`, Request-Header `Authorization` mit Wert `Bearer <Token>`.
 
 Update: `docker compose --env-file .env pull && docker compose --env-file .env up -d` im Ordner `deploy/exoscale`. Zweites Token für den Wechsel: in `.env` mit Komma anhängen, neu starten, altes später entfernen.
-
-Ein Ein-Befehl-Skript mit der `exo`-CLI fehlt noch, weil die CLI-Syntax nicht gegen die Doku geprüft werden konnte.
 
 ## Weg B: LibreChat
 
