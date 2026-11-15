@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 (unveröffentlicht)
+- HTTP-Betrieb: `GET /healthz` ohne Token (nur Status und Version), alle anderen Pfade bleiben geschützt.
+- Mehrere Tokens: `MCP_AUTH_TOKEN` als Komma-Liste, zusätzlich `MCP_AUTH_TOKEN_FILE` (eine Zeile je Token). Ein Komma im Token trennt jetzt.
+- `MCP_ALLOWED_HOSTS` und `MCP_ALLOWED_ORIGINS`: Host-/Origin-Prüfung mit eigenen Hostnamen, z. B. hinter einem Reverse Proxy.
+- `MCP_STATELESS=1`: zustandsloser Streamable-HTTP-Betrieb, übersteht Neustarts ohne Sitzungsverlust.
+- `DATAGVAT_ALLOWED_HOSTS`: optionale Liste erlaubter Abruf-Ziele (Suffix-Abgleich), gilt für jede Weiterleitung.
+- SIGTERM beendet den HTTP-Server mit Exit-Code 0 und räumt Temp-Verzeichnis und Cache auf (vorher Exit -15 ohne Aufräumen).
+- Temp-Reste eines Vorgängers mit derselben PID werden beim Start entfernt (Container-Neustart).
+- 234 Offline-Tests.
+
 ## 1.0.0 (2026-10-30)
 - `query_distribution_sql`: `extra_tables` lädt bis zu 3 weitere Dateien als eigene Tabellen, z. B. Codelisten zum JOIN mit `dataset`. Alle Tabellen werden vor dem Sperren der Sandbox geladen.
 - `get_dataset_details`: `lookup_tables` (Codelisten als Name → URL); `check_links=True` prüft die Links vorab per Range-Anfrage (SSRF-Prüfung je Weiterleitung), tote Links und Weiterleitungen auf HTML-Seiten werden nicht mehr empfohlen.

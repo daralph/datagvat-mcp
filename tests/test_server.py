@@ -1513,14 +1513,15 @@ def test_temp_files_live_in_own_dir_and_stale_dirs_are_swept(tmp_path, monkeypat
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(m, "_tmp_dir", None)
     stale = tmp_path / "datagvat-2147483646-abcd"  # PID existiert nicht
-    alive = tmp_path / f"datagvat-{os.getpid()}-zzzz"  # eigener Prozess
+    alive = tmp_path / f"datagvat-{os.getppid()}-zzzz"  # lebender fremder Prozess
+    own = tmp_path / f"datagvat-{os.getpid()}-yyyy"  # Rest eines Vorgaengers mit derselben PID (Container-Neustart)
     other = tmp_path / "anderes-verzeichnis"
-    for d in (stale, alive, other):
+    for d in (stale, alive, own, other):
         d.mkdir()
     fd, name = m._mkstemp(".x")
     os.close(fd)
     assert Path(name).parent == m._tmp_root() and m._tmp_root().parent == tmp_path
-    assert not stale.exists() and alive.exists() and other.exists()
+    assert not stale.exists() and not own.exists() and alive.exists() and other.exists()
     monkeypatch.setattr(m, "_tmp_dir", None)  # Fixture-Verzeichnis nicht ins echte Temp zurueckschreiben
 
 
@@ -1733,3 +1734,243 @@ def test_clean_error_masks_file_urls_but_keeps_http_urls() -> None:
     text = m._clean_error(ValueError("IO Error: file:///private/var/folders/x/datagvat-1/a.csv und https://data.statistik.gv.at/data/x.csv"))
     assert "/private" not in text and "file:" not in text
     assert "https://data.statistik.gv.at/data/x.csv" in text
+
+
+# ---------- Serverbetrieb: Healthcheck, mehrere Tokens, Host-Pruefung, Abruf-Ziele, SIGTERM ----------
+
+TOKEN2 = "z" * 32
+INIT_BODY = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test", "version": "0"}},
+}
+
+
+def _server_client(tokens=TOKEN) -> httpx.AsyncClient:
+    app = m._HealthMiddleware(m._BearerAuthMiddleware(_ok_app, tokens))
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+
+async def test_healthz_answers_without_token_and_reveals_only_status() -> None:
+    async with _server_client() as c:
+        res = await c.get("/healthz")
+        head = await c.head("/healthz")
+    assert res.status_code == 200 and res.json() == {"status": "ok", "version": m.__version__}
+    assert head.status_code == 200 and head.content == b""
+    assert TOKEN not in res.text
+
+
+@pytest.mark.parametrize(
+    "method, path",
+    [("POST", "/healthz"), ("DELETE", "/healthz"), ("GET", "/healthz/"), ("GET", "/healthzx"), ("GET", "/x/healthz"), ("GET", "/mcp"), ("GET", "/")],
+)
+async def test_healthz_exception_is_exact(method, path) -> None:
+    async with _server_client() as c:
+        assert (await c.request(method, path)).status_code == 401
+
+
+async def test_several_tokens_are_all_valid_and_nothing_else() -> None:
+    async with _server_client([TOKEN, TOKEN2]) as c:
+        for good in (TOKEN, TOKEN2):
+            assert (await c.post("/mcp", headers={"Authorization": f"Bearer {good}"})).status_code == 200
+        for bad in (TOKEN[:-1], TOKEN + TOKEN2, f"{TOKEN},{TOKEN2}", ""):
+            assert (await c.post("/mcp", headers={"Authorization": f"Bearer {bad}"})).status_code == 401
+
+
+def test_bearer_middleware_compares_against_every_token(monkeypatch) -> None:
+    seen = []
+    real = m.hmac.compare_digest
+    monkeypatch.setattr(m.hmac, "compare_digest", lambda a, b: seen.append(b) or real(a, b))
+    assert m._BearerAuthMiddleware(_ok_app, [TOKEN, TOKEN2])._is_valid(TOKEN.encode()) is True
+    assert seen == [TOKEN.encode(), TOKEN2.encode()], "kein vorzeitiger Abbruch nach dem ersten Treffer"
+
+
+def test_load_tokens_from_env_list_and_file(tmp_path) -> None:
+    f = tmp_path / "tokens"
+    f.write_text(f"# Kommentar\n\n  {TOKEN2}  \n{TOKEN}\n", encoding="utf-8")
+    assert m._load_tokens(f" {TOKEN} , ,{TOKEN}") == [TOKEN]
+    assert m._load_tokens(TOKEN, str(f)) == [TOKEN, TOKEN2]
+    assert m._load_tokens("", str(f)) == [TOKEN2, TOKEN]
+
+
+@pytest.mark.parametrize("content", [None, "", "# nur Kommentar\n\n"])
+def test_load_tokens_refuses_unusable_file(tmp_path, content) -> None:
+    f = tmp_path / "tokens"
+    if content is not None:
+        f.write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError, match="MCP_AUTH_TOKEN_FILE") as exc:
+        m._load_tokens(TOKEN, str(f))
+    assert str(tmp_path) not in str(exc.value)
+
+
+def test_http_security_policy_checks_every_token() -> None:
+    assert m._http_security_problem("0.0.0.0", [TOKEN, TOKEN2], False) is None
+    assert "zu kurz" in m._http_security_problem("0.0.0.0", [TOKEN, "kurz"], False)
+    assert m._http_security_problem("0.0.0.0", [], False) is not None
+
+
+@pytest.mark.parametrize(
+    "env_extra, needle",
+    [
+        ({"MCP_AUTH_TOKEN": f"{TOKEN},kurz"}, b"zu kurz"),
+        ({"MCP_AUTH_TOKEN_FILE": "/nicht/vorhanden"}, b"MCP_AUTH_TOKEN_FILE"),
+        ({"MCP_AUTH_TOKEN": TOKEN, "MCP_ALLOWED_ORIGINS": "https://x.example"}, b"MCP_ALLOWED_HOSTS"),
+    ],
+)
+def test_server_refuses_start_on_bad_http_config(env_extra, needle) -> None:
+    import os, subprocess
+
+    env = {**os.environ, "MCP_TRANSPORT": "streamable-http", "MCP_HOST": "127.0.0.1", "MCP_PORT": str(_free_port())}
+    for key in ("MCP_AUTH_TOKEN", "MCP_AUTH_TOKEN_FILE", "MCP_ALLOWED_HOSTS", "MCP_ALLOWED_ORIGINS", "MCP_ALLOW_NO_AUTH"):
+        env.pop(key, None)
+    env.update(env_extra)
+    res = subprocess.run([sys.executable, str(Path(m.__file__))], env=env, capture_output=True, timeout=60)
+    assert res.returncode == 2 and needle in res.stderr and TOKEN.encode() not in res.stderr
+
+
+def test_transport_security_settings() -> None:
+    assert m._transport_security([]) is None
+    settings = m._transport_security(["mcp.example.org"], ["https://app.example"])
+    assert settings.enable_dns_rebinding_protection is True
+    assert {"mcp.example.org", "mcp.example.org:*", "127.0.0.1:*"} <= set(settings.allowed_hosts)
+    assert {"https://mcp.example.org", "https://app.example"} <= set(settings.allowed_origins)
+
+
+async def test_http_server_end_to_end_in_server_mode(tmp_path) -> None:
+    """Zwei Tokens (Variable und Datei), zustandslos, Host-Pruefung mit eigenem Hostnamen, Healthcheck, sauberes Ende."""
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    token_file = tmp_path / "tokens"
+    token_file.write_text(TOKEN2 + "\n", encoding="utf-8")
+    port = _free_port()
+    proc = _start_server(
+        {
+            "MCP_HOST": "127.0.0.1",
+            "MCP_PORT": str(port),
+            "MCP_AUTH_TOKEN": TOKEN,
+            "MCP_AUTH_TOKEN_FILE": str(token_file),
+            "MCP_STATELESS": "1",
+            "MCP_ALLOWED_HOSTS": "mcp.example.org",
+        }
+    )
+    try:
+        await _wait_for_port(port, proc)
+        base = f"http://127.0.0.1:{port}"
+        accept = {"Accept": "application/json, text/event-stream"}
+        auth = {**accept, "Authorization": f"Bearer {TOKEN2}", "Host": "mcp.example.org"}
+        async with httpx.AsyncClient() as c:
+            health = await c.get(f"{base}/healthz")
+            assert health.status_code == 200 and health.json()["status"] == "ok"
+            assert (await c.post(f"{base}/mcp", json=INIT_BODY, headers=accept)).status_code == 401
+            ok = await c.post(f"{base}/mcp", json=INIT_BODY, headers=auth)
+            assert ok.status_code == 200 and "data-gv-at" in ok.text
+            assert "mcp-session-id" not in ok.headers, "zustandslos: keine Sitzung, die einen Neustart ueberleben muesste"
+            assert (await c.post(f"{base}/mcp", json=INIT_BODY, headers={**auth, "Host": "evil.example"})).status_code == 421
+            assert (await c.post(f"{base}/mcp", json=INIT_BODY, headers={**auth, "Origin": "https://evil.example"})).status_code == 403
+            assert (await c.post(f"{base}/mcp", json=INIT_BODY, headers={**auth, "Origin": "https://mcp.example.org"})).status_code == 200
+        for token in (TOKEN, TOKEN2):
+            async with httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as authed:
+                async with streamable_http_client(f"{base}/mcp", http_client=authed) as streams:
+                    async with ClientSession(streams[0], streams[1]) as session:
+                        await session.initialize()
+                        names = {t.name for t in (await session.list_tools()).tools}
+            assert "search_datasets" in names
+    finally:
+        proc.terminate()
+        code = proc.wait(timeout=10)
+    assert code == 0, "SIGTERM muss geordnet enden, sonst laeuft atexit nicht"
+
+
+async def test_sigterm_removes_temp_dir() -> None:
+    import os, subprocess
+
+    port = _free_port()
+    code = "import datagvat_mcp as m; print(m._tmp_root(), flush=True); m.main()"
+    env = {
+        **os.environ,
+        "MCP_TRANSPORT": "streamable-http",
+        "MCP_HOST": "127.0.0.1",
+        "MCP_PORT": str(port),
+        "PYTHONPATH": str(Path(m.__file__).parent),
+    }
+    proc = subprocess.Popen([sys.executable, "-c", code], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        await _wait_for_port(port, proc)
+        tmp = Path(proc.stdout.readline().decode().strip())
+        assert tmp.is_dir()
+    finally:
+        proc.terminate()
+        exit_code = proc.wait(timeout=10)
+    assert exit_code == 0 and not tmp.exists()
+
+
+@pytest.fixture
+def fetch_hosts(monkeypatch):
+    def install(*hosts: str) -> None:
+        monkeypatch.setattr(m, "ALLOWED_FETCH_HOSTS", tuple(hosts))
+
+    return install
+
+
+def test_fetch_host_list_is_off_by_default() -> None:
+    assert m.ALLOWED_FETCH_HOSTS == ()
+    m._check_fetch_host("irgendwo.example")
+
+
+@pytest.mark.parametrize(
+    "host, ok",
+    [
+        ("data.statistik.gv.at", True),
+        ("gv.at", True),
+        ("WWW.Wien.GV.AT.", True),
+        ("evilgv.at", False),
+        ("gv.at.evil.example", False),
+        ("93.184.216.34", False),
+    ],
+)
+def test_fetch_host_list_matches_by_suffix(fetch_hosts, host, ok) -> None:
+    fetch_hosts("gv.at")
+    if ok:
+        m._check_fetch_host(host)
+    else:
+        with pytest.raises(m._HostNotAllowed, match="DATAGVAT_ALLOWED_HOSTS"):
+            m._check_fetch_host(host)
+
+
+def test_fetch_host_list_never_locks_out_the_catalog(fetch_hosts) -> None:
+    fetch_hosts("example.org")
+    m._check_fetch_host("www.data.gv.at")
+    with pytest.raises(m._HostNotAllowed):
+        m._check_fetch_host("data.statistik.gv.at")
+
+
+async def test_download_from_unlisted_host_is_refused_before_any_request(transport, fetch_hosts) -> None:
+    fetch_hosts("gv.at")
+    calls = transport(lambda req: httpx.Response(200, content=CSV_BODY))
+    out = _data(await m.inspect_distribution_schema(url="http://93.184.216.34/daten.csv"))
+    assert "DATAGVAT_ALLOWED_HOSTS" in out["error"] and calls == []
+
+
+async def test_redirect_to_unlisted_host_is_blocked(transport, fetch_hosts) -> None:
+    fetch_hosts(httpx.URL(PUBLIC).host)
+    calls = transport(lambda req: httpx.Response(302, headers={"location": "http://93.184.216.35/x.csv"}))
+    with pytest.raises(m._HostNotAllowed):
+        await m._download_to_temp(PUBLIC)
+    assert calls == [PUBLIC], "Das nicht freigegebene Ziel darf nie angefragt werden"
+
+
+async def test_pinned_backend_enforces_host_list(fetch_hosts, monkeypatch) -> None:
+    fetch_hosts("gv.at")
+    monkeypatch.setattr(m, "_resolve_public_ips", lambda host: pytest.fail("darf nicht aufgeloest werden"))
+    with pytest.raises(m._HostNotAllowed):
+        await m._PublicOnlyBackend().connect_tcp("evil.example", 443)
+
+
+async def test_check_link_reports_unlisted_host(transport, fetch_hosts) -> None:
+    fetch_hosts("gv.at")
+    calls = transport(lambda req: httpx.Response(200, content=CSV_BODY))
+    async with m._client() as client:
+        result = await m._check_link(client, "http://93.184.216.34/x.csv")
+    assert result == {"ok": False, "status": "gesperrt (Host nicht in DATAGVAT_ALLOWED_HOSTS)"} and calls == []
