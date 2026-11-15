@@ -1,0 +1,25 @@
+# Wird von install.sh als docker-compose.datagvat.yml in den LibreChat-Ordner kopiert.
+services:
+  api:
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+    depends_on:
+      - mcp-datagvat
+
+  mcp-datagvat:
+    image: ghcr.io/daralph/datagvat-mcp:${DATAGVAT_MCP_IMAGE_TAG:-1.1}
+    container_name: mcp-datagvat
+    restart: unless-stopped
+    init: true
+    environment:
+      - MCP_TRANSPORT=streamable-http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - MCP_STATELESS=1
+      - MCP_AUTH_TOKEN=${DATAGVAT_MCP_TOKEN:?DATAGVAT_MCP_TOKEN in .env setzen}
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 2g
+    pids_limit: 256

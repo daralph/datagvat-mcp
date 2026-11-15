@@ -1,0 +1,17 @@
+# TLS-Abschluss fuer datagvat-mcp. Caddy holt das Zertifikat fuer MCP_DOMAIN selbst.
+# Der Authorization-Header wird von Caddy im Zugriffslog unkenntlich gemacht (Standardverhalten).
+{$MCP_DOMAIN} {
+	request_body {
+		max_size 4MB
+	}
+	reverse_proxy mcp:8000 {
+		flush_interval -1
+		transport http {
+			response_header_timeout 180s
+		}
+	}
+	log {
+		output stdout
+		format json
+	}
+}

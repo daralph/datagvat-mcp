@@ -14,5 +14,5 @@ ENV MCP_TRANSPORT=streamable-http \
 USER nobody
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD python3 -c "import os, socket; socket.create_connection(('127.0.0.1', int(os.getenv('MCP_PORT', '8000'))), 3)" || exit 1
+  CMD python3 -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/healthz' % os.getenv('MCP_PORT', '8000'), timeout=3)" || exit 1
 CMD ["uv", "run", "--locked", "--offline", "--script", "/app/datagvat_mcp.py"]

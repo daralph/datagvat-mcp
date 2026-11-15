@@ -20,6 +20,16 @@ Gemessen am 15.11.2026 in einer Linux-Umgebung ohne Docker-Daemon, mit mcp 1.30.
 - Exoscale, Caddy, LibreChat, claude.ai. Die Doku-Seiten waren aus der Arbeitsumgebung nicht erreichbar.
 - Jede Zeitmessung. Es gibt noch keine Aussage, ob 5 oder 30 Minuten erreichbar sind.
 
-## Offen (Meilenstein 2)
+## Meilenstein 2: geschrieben, statisch geprüft
 
-Veröffentlichtes Image samt `release.yml`, `deploy/exoscale` (Compose, Caddy, cloud-init, `up.sh`, `down.sh`), `deploy/librechat/install.sh`, Zeitmessungen, Abschlussbericht.
+`release.yml` (Image nach GHCR), `deploy/smoke-test.sh`, `deploy/exoscale` (Compose, Caddyfile, cloud-init, `first-boot.sh`), `deploy/librechat` (`install.sh`, Test). Geprüft: Shell-Syntax, `docker compose config` für beide Compose-Dateien, YAML der Workflows und von cloud-init, sechs Fälle der Dateibehandlung von `install.sh`.
+
+Befund zum schreibgeschützten Dateisystem: `uv run --locked --offline` scheitert mit schreibgeschütztem Cache („Could not create temporary file … Read-only file system“). Deshalb steht in `compose.yml` kein `read_only`. Die CI prüft den Fall im echten Container als eigenen, nicht blockierenden Schritt.
+
+## Offen
+
+- Erster CI-Lauf mit Docker (Build, Rauchtest, Caddy-Prüfung).
+- Tag `v1.1.0`, Image veröffentlichen und auf „public“ stellen.
+- Echter Lauf auf Exoscale und in LibreChat, Zeitmessung für 5 und 30 Minuten.
+- Ein-Befehl-Skripte `up.sh` und `down.sh` mit der `exo`-CLI.
+- Zertifikat ohne DNS-Wartezeit belegen (sslip.io oder IP-Zertifikat).

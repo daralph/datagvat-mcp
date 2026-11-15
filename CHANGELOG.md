@@ -8,6 +8,8 @@
 - `DATAGVAT_ALLOWED_HOSTS`: optionale Liste erlaubter Abruf-Ziele (Suffix-Abgleich), gilt für jede Weiterleitung.
 - SIGTERM beendet den HTTP-Server mit Exit-Code 0 und räumt Temp-Verzeichnis und Cache auf (vorher Exit -15 ohne Aufräumen).
 - Temp-Reste eines Vorgängers mit derselben PID werden beim Start entfernt (Container-Neustart).
+- Serverbetrieb: `deploy/` mit Compose und Caddy für eine VM, cloud-init, LibreChat-Installer, Rauchtest; `release.yml` veröffentlicht das Image nach GHCR.
+- Docker-Healthcheck prüft `/healthz` statt nur den TCP-Port.
 - 234 Offline-Tests.
 
 ## 1.0.0 (2026-10-30)
