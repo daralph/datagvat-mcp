@@ -23,6 +23,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import socket
 import struct
 import sys
@@ -35,7 +36,7 @@ import contextlib
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Sequence
 from urllib.parse import quote, urlparse
 
 import duckdb
@@ -81,8 +82,26 @@ RETRY_MAX_DELAY = 10.0
 LINK_CHECK_TIMEOUT = float(os.getenv("DATAGVAT_LINK_CHECK_TIMEOUT", "8"))  # je Link: HTTP-Timeout, Gesamtlimit das Doppelte
 LINK_CHECK_MAX = 20  # hoechstens so viele Distributions-Links pro Datensatz pruefen
 LINK_CHECK_PARALLEL = 6  # gleichzeitige Link-Pruefungen
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 USER_AGENT = f"datagvat-mcp/{__version__} (+https://www.data.gv.at/)"
+
+
+def _parse_list(value: str) -> list[str]:
+    """Komma-Liste aus einer Umgebungsvariable: getrimmt, ohne leere Eintraege, ohne Dubletten."""
+    out: list[str] = []
+    for part in value.split(","):
+        part = part.strip()
+        if part and part not in out:
+            out.append(part)
+    return out
+
+
+# Optionale Liste erlaubter Abruf-Ziele (Suffix-Abgleich, z. B. "gv.at,statistik.at"). Leer = alle oeffentlichen Hosts.
+# Gedacht fuer oeffentlich erreichbare Server: mit einem geleakten Token waere der Server sonst ein offener Abruf-Proxy.
+ALLOWED_FETCH_HOSTS: tuple[str, ...] = tuple(
+    h.lower().strip(".") for h in _parse_list(os.getenv("DATAGVAT_ALLOWED_HOSTS", ""))
+)
+_ALWAYS_ALLOWED_HOSTS = ("data.gv.at",)  # Katalog-API, sonst waere der Server mit Liste unbrauchbar
 
 # Nur fuer Tests: ersetzt den HTTP-Transport (httpx.MockTransport).
 _TRANSPORT: httpx.AsyncBaseTransport | None = None
@@ -317,11 +336,33 @@ def _resolve_public_ips(host: str) -> list[str]:
     return ips
 
 
+class _HostNotAllowed(ValueError):
+    """Host steht nicht in DATAGVAT_ALLOWED_HOSTS."""
+
+
+def _host_matches(host: str, suffixes: Sequence[str]) -> bool:
+    return any(host == s or host.endswith("." + s) for s in suffixes)
+
+
+def _check_fetch_host(host: str) -> None:
+    """Greift nur, wenn DATAGVAT_ALLOWED_HOSTS gesetzt ist; zusaetzlich zur IP-Pruefung, nie statt ihr."""
+    if not ALLOWED_FETCH_HOSTS:
+        return
+    name = host.lower().rstrip(".")
+    if _host_matches(name, _ALWAYS_ALLOWED_HOSTS) or _host_matches(name, ALLOWED_FETCH_HOSTS):
+        return
+    raise _HostNotAllowed(
+        f"Der Host '{host}' ist auf diesem Server nicht freigegeben (DATAGVAT_ALLOWED_HOSTS). "
+        "Der Abruf wurde nicht versucht."
+    )
+
+
 def _validate_public_url(url: str) -> None:
     """Fruehe Pruefung mit klarer Meldung; die verbindliche Pruefung macht _PublicOnlyBackend beim Verbinden."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ValueError("Nur vollstaendige http:// oder https:// URLs sind zulaessig.")
+    _check_fetch_host(parsed.hostname)
     _resolve_public_ips(parsed.hostname)
 
 
@@ -334,6 +375,7 @@ class _PublicOnlyBackend(httpcore.AsyncNetworkBackend):
         self._inner = inner or httpcore.AnyIOBackend()
 
     async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        _check_fetch_host(host.decode() if isinstance(host, bytes) else host)
         ips = await asyncio.to_thread(_resolve_public_ips, host)
         last: Exception | None = None
         for ip in ips:
@@ -430,7 +472,9 @@ def _tmp_root() -> Path:
         base = Path(tempfile.gettempdir())
         for old in base.glob("datagvat-*"):
             m = re.fullmatch(r"datagvat-(\d+)-\w+", old.name)
-            if m and old.is_dir() and not _pid_alive(int(m.group(1))):
+            # Eigene PID: an dieser Stelle gibt es noch kein eigenes Verzeichnis, also ist es der Rest eines
+            # Vorgaengers mit derselben PID (im Container nach jedem Neustart der Fall).
+            if m and old.is_dir() and (int(m.group(1)) == os.getpid() or not _pid_alive(int(m.group(1)))):
                 shutil.rmtree(old, ignore_errors=True)
         _tmp_dir = Path(tempfile.mkdtemp(prefix=f"datagvat-{os.getpid()}-"))
         atexit.register(shutil.rmtree, _tmp_dir, True)
@@ -828,6 +872,8 @@ async def _check_link(client: httpx.AsyncClient, url: str) -> dict:
                     return {"ok": False, "status": f"liefert keine Datei: {problem}{suffix}"}
                 return {"ok": True, "status": "ok" + suffix}
             return {"ok": False, "status": "zu viele Weiterleitungen"}
+    except _HostNotAllowed:
+        return {"ok": False, "status": "gesperrt (Host nicht in DATAGVAT_ALLOWED_HOSTS)"}
     except ValueError:
         return {"ok": False, "status": "gesperrt (keine oeffentliche Adresse)"}
     except (TimeoutError, httpx.HTTPError, httpx.InvalidURL):
@@ -1627,14 +1673,65 @@ def _selftest() -> int:
 
 
 MIN_TOKEN_LENGTH = 16
+HEALTH_PATH = "/healthz"
+
+
+def _load_tokens(env_value: str, file_path: str = "") -> list[str]:
+    """Tokens aus MCP_AUTH_TOKEN (Komma-Liste) und MCP_AUTH_TOKEN_FILE (eine Zeile je Token, '#' = Kommentar)."""
+    tokens = _parse_list(env_value)
+    if file_path:
+        try:
+            lines = Path(file_path).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ValueError(f"MCP_AUTH_TOKEN_FILE ist nicht lesbar ({type(exc).__name__}).") from exc
+        from_file = [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+        if not from_file:
+            # Ohne diese Pruefung liefe der Server auf Loopback stillschweigend ohne Authentifizierung.
+            raise ValueError("MCP_AUTH_TOKEN_FILE enthaelt kein Token.")
+        tokens += [t for t in from_file if t not in tokens]
+    return tokens
+
+
+class _HealthMiddleware:
+    """Beantwortet GET/HEAD /healthz ohne Authentifizierung (Proxy, Docker-Healthcheck, Skripte).
+    Exakter Pfad, keine Praefixe; jede andere Anfrage geht unveraendert weiter (also durch die Token-Pruefung)."""
+
+    def __init__(self, app: Any):
+        self.app = app
+        self._body = json.dumps({"status": "ok", "version": __version__}).encode()
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http" and scope.get("path") == HEALTH_PATH and scope.get("method") in ("GET", "HEAD"):
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(self._body)).encode()),
+                        (b"cache-control", b"no-store"),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": b"" if scope["method"] == "HEAD" else self._body})
+            return
+        await self.app(scope, receive, send)
 
 
 class _BearerAuthMiddleware:
-    """ASGI-Middleware: verlangt 'Authorization: Bearer <Token>' auf HTTP-Anfragen (Lifespan bleibt unberuehrt)."""
+    """ASGI-Middleware: verlangt 'Authorization: Bearer <Token>' auf HTTP-Anfragen (Lifespan bleibt unberuehrt).
+    Mehrere Tokens sind erlaubt (je Client eines, Wechsel ohne Ausfall)."""
 
-    def __init__(self, app: Any, token: str):
+    def __init__(self, app: Any, token: str | Sequence[str]):
         self.app = app
-        self._expected = token.encode()
+        tokens = [token] if isinstance(token, str) else list(token)
+        self._expected = [t.encode() for t in tokens if t]
+
+    def _is_valid(self, supplied: bytes) -> bool:
+        ok = False
+        for expected in self._expected:  # immer alle vergleichen: kein vorzeitiger Abbruch, kein Zeitunterschied
+            ok = hmac.compare_digest(supplied, expected) or ok
+        return ok
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope["type"] == "lifespan":
@@ -1651,7 +1748,7 @@ class _BearerAuthMiddleware:
                 if scheme.lower() == b"bearer":
                     supplied = credentials.strip()
                 break
-        if hmac.compare_digest(supplied, self._expected):
+        if self._is_valid(supplied):
             await self.app(scope, receive, send)
             return
         body = b'{"error": "Unauthorized"}'
@@ -1678,11 +1775,15 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
-def _http_security_problem(host: str, token: str, allow_no_auth: bool) -> str | None:
+def _http_security_problem(host: str, token: str | Sequence[str], allow_no_auth: bool) -> str | None:
     """Gibt den Grund zurueck, warum der HTTP-Start so nicht erlaubt ist (sonst None)."""
-    if token and len(token) < MIN_TOKEN_LENGTH:
-        return f"MCP_AUTH_TOKEN ist zu kurz (mindestens {MIN_TOKEN_LENGTH} Zeichen, z. B. 'openssl rand -hex 32')."
-    if not token and not _is_loopback(host) and not allow_no_auth:
+    tokens = [t for t in ([token] if isinstance(token, str) else list(token)) if t]
+    if any(len(t) < MIN_TOKEN_LENGTH for t in tokens):
+        return (
+            f"Ein Token in MCP_AUTH_TOKEN bzw. MCP_AUTH_TOKEN_FILE ist zu kurz "
+            f"(mindestens {MIN_TOKEN_LENGTH} Zeichen, z. B. 'openssl rand -hex 32')."
+        )
+    if not tokens and not _is_loopback(host) and not allow_no_auth:
         return (
             f"HTTP auf {host} ohne Authentifizierung ist nicht erlaubt. MCP_AUTH_TOKEN setzen "
             "(oder bewusst MCP_ALLOW_NO_AUTH=1, nur in einem abgeschotteten Netz)."
@@ -1690,10 +1791,61 @@ def _http_security_problem(host: str, token: str, allow_no_auth: bool) -> str | 
     return None
 
 
-def _build_http_app(transport: str, token: str, host: str = "127.0.0.1") -> Any:
-    kwargs = {"host": host} if MCP_V2 else {}
-    app = mcp.streamable_http_app(**kwargs) if transport == "streamable-http" else mcp.sse_app(**kwargs)
-    return _BearerAuthMiddleware(app, token) if token else app
+_LOOPBACK_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+_LOOPBACK_ORIGINS = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+
+
+def _transport_security(allowed_hosts: Sequence[str], allowed_origins: Sequence[str] = ()) -> Any:
+    """Host-/Origin-Pruefung des SDK mit eigenen Hostnamen, z. B. hinter einem Reverse Proxy. None = SDK-Standard.
+
+    SDK-Standard (gemessen mit mcp 1.30 und 2.3): auf Loopback wird jeder fremde Host-Header mit 421 abgewiesen,
+    auf jeder anderen Bind-Adresse wird Host und Origin gar nicht geprueft. Mit MCP_ALLOWED_HOSTS gilt die Pruefung
+    auf jeder Bind-Adresse, und die genannten Hostnamen sind zusaetzlich zu Loopback erlaubt.
+    """
+    if not allowed_hosts:
+        return None
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    hosts = list(_LOOPBACK_HOSTS)
+    origins = list(_LOOPBACK_ORIGINS)
+    for h in allowed_hosts:
+        hosts += [h, f"{h}:*"]
+        origins += [f"https://{h}", f"https://{h}:*", f"http://{h}", f"http://{h}:*"]
+    origins += list(allowed_origins)
+    return TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=hosts, allowed_origins=origins)
+
+
+def _build_http_app(
+    transport: str,
+    token: str | Sequence[str],
+    host: str = "127.0.0.1",
+    *,
+    stateless: bool = False,
+    security: Any = None,
+) -> Any:
+    streamable = transport == "streamable-http"
+    if MCP_V2:
+        kwargs: dict[str, Any] = {"host": host}
+        if security is not None:
+            kwargs["transport_security"] = security
+        if stateless and streamable:
+            kwargs["stateless_http"] = True
+        app = mcp.streamable_http_app(**kwargs) if streamable else mcp.sse_app(**kwargs)
+    else:  # 1.x liest beides beim Bauen der App aus den Settings
+        if security is not None:
+            mcp.settings.transport_security = security
+        if stateless and streamable:
+            mcp.settings.stateless_http = True
+        app = mcp.streamable_http_app() if streamable else mcp.sse_app()
+    if token:
+        app = _BearerAuthMiddleware(app, token)
+    return _HealthMiddleware(app)
+
+
+def _exit_on_sigterm(signum: int, frame: Any) -> None:
+    """uvicorn faehrt bei SIGTERM geordnet herunter und loest das Signal danach erneut aus. Ohne eigenen Handler
+    beendet das den Prozess sofort (Exit -15): atexit laeuft nicht, Temp-Verzeichnis und Datei-Cache bleiben liegen."""
+    sys.exit(0)
 
 
 def main() -> None:
@@ -1707,16 +1859,40 @@ def main() -> None:
         sys.exit(f"Unbekannter MCP_TRANSPORT '{transport}' (erlaubt: stdio, streamable-http, sse).")
     host = os.getenv("MCP_HOST", "127.0.0.1")
     port = int(os.getenv("MCP_PORT", "8000"))
-    token = os.getenv("MCP_AUTH_TOKEN", "").strip()
-    problem = _http_security_problem(host, token, os.getenv("MCP_ALLOW_NO_AUTH") == "1")
+    allowed_hosts = _parse_list(os.getenv("MCP_ALLOWED_HOSTS", ""))
+    allowed_origins = _parse_list(os.getenv("MCP_ALLOWED_ORIGINS", ""))
+    stateless = os.getenv("MCP_STATELESS") == "1"
+    try:
+        tokens = _load_tokens(os.getenv("MCP_AUTH_TOKEN", ""), os.getenv("MCP_AUTH_TOKEN_FILE", "").strip())
+        problem = _http_security_problem(host, tokens, os.getenv("MCP_ALLOW_NO_AUTH") == "1")
+        if not problem and allowed_origins and not allowed_hosts:
+            problem = "MCP_ALLOWED_ORIGINS wirkt nur zusammen mit MCP_ALLOWED_HOSTS."
+    except ValueError as exc:
+        problem = str(exc)
     if problem:
         print(f"[FEHLER] {problem}", file=sys.stderr)
         sys.exit(2)
-    if not token:
+    if not tokens:
         logger.warning("HTTP ohne Authentifizierung auf %s:%s (nur lokal bzw. im abgeschotteten Netz verwenden).", host, port)
+    if stateless and transport != "streamable-http":
+        logger.warning("MCP_STATELESS=1 wirkt nur mit MCP_TRANSPORT=streamable-http und wird ignoriert.")
+    logger.info(
+        "HTTP-Start: %s auf %s:%s, Tokens: %d, zustandslos: %s, Host-Pruefung: %s, Abruf-Ziele: %s",
+        transport,
+        host,
+        port,
+        len(tokens),
+        "ja" if stateless and transport == "streamable-http" else "nein",
+        ", ".join(allowed_hosts) if allowed_hosts else "SDK-Standard",
+        ", ".join(ALLOWED_FETCH_HOSTS) if ALLOWED_FETCH_HOSTS else "alle oeffentlichen Hosts",
+    )
     import uvicorn
 
-    uvicorn.run(_build_http_app(transport, token, host), host=host, port=port, log_level="info")
+    app = _build_http_app(
+        transport, tokens, host, stateless=stateless, security=_transport_security(allowed_hosts, allowed_origins)
+    )
+    signal.signal(signal.SIGTERM, _exit_on_sigterm)
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # datagvat-mcp
 
-MCP-Server (Version 1.0.0) für den österreichischen Open-Data-Katalog [data.gv.at](https://www.data.gv.at/) (Piveau hub-search).
+MCP-Server (Version 1.1.0) für den österreichischen Open-Data-Katalog [data.gv.at](https://www.data.gv.at/) (Piveau hub-search).
 Lädt CSV-/JSON-/Parquet-Distributionen sowie ZIP-Archive und Excel-Dateien (`.xlsx`/`.xls`) und wertet sie mit DuckDB aus (Tabelle `dataset`, In-Memory, ohne Datei-/Netzzugriff).
 
 ## Tools
@@ -70,7 +70,7 @@ uv run --no-project --with pytest --with pytest-asyncio --with "mcp[cli]>=1.30,<
 # gegen die echte API
 ... pytest -m live
 ```
-Die Tests laufen mit beiden mcp-Hauptversionen (201 offline, 4 live). Mit 2.x sind Attribute der Python-Clients snake_case (`is_error`), auf dem Draht bleibt es camelCase (`isError`).
+Die Tests laufen mit beiden mcp-Hauptversionen (234 offline, 4 live). Mit 2.x sind Attribute der Python-Clients snake_case (`is_error`), auf dem Draht bleibt es camelCase (`isError`).
 
 ## Sicherheit
 - SSRF: Jede URL und jede Weiterleitung (max. 5) wird per DNS auf öffentliche IPs geprüft (`ipaddress.is_global`, zusätzlich NAT64 gesperrt). Die verbindliche Prüfung läuft beim Verbindungsaufbau: der Server löst den Host selbst auf, prüft alle Adressen und verbindet auf genau diese IP (TLS/SNI weiter über den Hostnamen). Damit ist DNS-Rebinding ausgeschlossen. Proxy-/netrc-Umgebung wird ignoriert (`trust_env=False`), Unix-Sockets sind gesperrt.
@@ -97,6 +97,13 @@ Die Tests laufen mit beiden mcp-Hauptversionen (201 offline, 4 live). Mit 2.x si
 | `MCP_HOST` / `MCP_PORT` | `127.0.0.1` / `8000` | Bind-Adresse (nur HTTP) |
 | `MCP_AUTH_TOKEN` | – | Bearer-Token (HTTP, mind. 16 Zeichen) |
 | `MCP_ALLOW_NO_AUTH` | – | `1` erlaubt Nicht-Loopback ohne Token |
+| `MCP_AUTH_TOKEN_FILE` | – | Datei mit einem Token je Zeile (`#` = Kommentar), zusätzlich zu `MCP_AUTH_TOKEN` (dort Komma-Liste möglich) |
+| `MCP_ALLOWED_HOSTS` | – | Erlaubte Hostnamen für die Host-Prüfung, z. B. `mcp.example.org` hinter einem Reverse Proxy |
+| `MCP_ALLOWED_ORIGINS` | – | Zusätzliche erlaubte Origins für Browser-Clients, nur mit `MCP_ALLOWED_HOSTS` |
+| `MCP_STATELESS` | – | `1` = zustandsloser Betrieb (nur `streamable-http`) |
+| `DATAGVAT_ALLOWED_HOSTS` | – | Erlaubte Abruf-Ziele per Suffix, z. B. `gv.at,statistik.at`; leer = alle öffentlichen Hosts |
+
+`GET /healthz` antwortet im HTTP-Betrieb ohne Token mit Status und Version. Stand und offene Punkte des Serverbetriebs: `docs/serverbetrieb-analyse.md`.
 
 Abhängigkeiten sind in `datagvat_mcp.py.lock` festgeschrieben (`uv lock --script datagvat_mcp.py`). Das Docker-Image baut mit `--locked` und startet `--offline`, also genau mit diesen Versionen. Aktualisieren: `uv lock --script --upgrade datagvat_mcp.py`, danach Tests laufen lassen (wegen des IP-Pinnings besonders bei httpx/httpcore). CI (`.github/workflows/tests.yml`) testet bei jedem Push gegen mcp 1.x und 2.x und baut das Image, wöchentlich zusätzlich gegen die echte API.
 
