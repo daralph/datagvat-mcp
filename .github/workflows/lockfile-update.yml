@@ -1,0 +1,54 @@
+name: lockfile-update
+on:
+  schedule:
+    - cron: "0 6 1 * *"   # monatlich am 1. um 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  update-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Lockfile aktualisieren
+        id: lock
+        run: |
+          uv lock --script --upgrade datagvat_mcp.py
+          if git diff --quiet datagvat_mcp.py.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Selftest mit neuem Lockfile
+        if: steps.lock.outputs.changed == 'true'
+        run: uv run --locked --script datagvat_mcp.py --selftest
+      - name: Offline-Tests gegen mcp 1.x
+        if: steps.lock.outputs.changed == 'true'
+        run: uv run --no-project --python 3.12 --with pytest --with pytest-asyncio --with "mcp[cli]>=1.30,<2" --with httpx --with duckdb --with python-calamine pytest -p no:cacheprovider -q
+      - name: Offline-Tests gegen mcp 2.x
+        if: steps.lock.outputs.changed == 'true'
+        run: uv run --no-project --python 3.12 --with pytest --with pytest-asyncio --with "mcp[cli]>=2,<3" --with httpx --with duckdb --with python-calamine pytest -p no:cacheprovider -q
+      - name: Branch aktualisieren und Pull Request oeffnen
+        if: steps.lock.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B chore/lockfile-update
+          git add datagvat_mcp.py.lock
+          git commit -m "Abhaengigkeiten im Lockfile aktualisieren"
+          git push --force origin chore/lockfile-update
+          OPEN_PR=$(gh pr list --head chore/lockfile-update --state open --json number --jq '.[0].number // empty')
+          if [ -z "$OPEN_PR" ]; then
+            gh pr create \
+              --base main \
+              --head chore/lockfile-update \
+              --title "chore: datagvat_mcp.py.lock aktualisieren" \
+              --body "Monatliche Aktualisierung von \`datagvat_mcp.py.lock\`. \`--selftest\` sowie Offline-Tests gegen \`mcp\` 1.x und 2.x liefen in diesem Workflow erfolgreich."
+          fi

@@ -4,6 +4,6 @@
 package_update: true
 packages: [docker.io, docker-compose-v2, git, curl, openssl, unattended-upgrades]
 runcmd:
-  - [git, clone, --depth, "1", --branch, v1.1.0, "https://github.com/daralph/datagvat-mcp", /opt/datagvat-mcp]
+  - [git, clone, --depth, "1", --branch, v1.1.1, "https://github.com/daralph/datagvat-mcp", /opt/datagvat-mcp]
   - [sh, /opt/datagvat-mcp/deploy/exoscale/first-boot.sh]
   - [sh, -c, "dpkg-reconfigure -f noninteractive unattended-upgrades && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"]

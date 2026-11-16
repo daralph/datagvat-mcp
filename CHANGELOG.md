@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 (2026-11-16)
+- Dokumentation bereinigt und um die Remote-Einbindung in LibreChat (Exoscale-VM mit `chatMenu: true`, `MCP_STATELESS=1`, Security-Group- und Update-Empfehlungen) ergänzt; `cloud-init.yaml` auf `v1.1.1` aktualisiert.
+- `datagvat_mcp.py.lock` aktualisiert; `.github/dependabot.yml` (Docker, Docker Compose, GitHub Actions) und monatlicher Workflow `.github/workflows/lockfile-update.yml` ergänzt.
+
 ## 1.1.0 (2026-11-16)
 - HTTP-Betrieb: `GET /healthz` ohne Token (nur Status und Version), alle anderen Pfade bleiben geschützt.
 - Mehrere Tokens: `MCP_AUTH_TOKEN` als Komma-Liste, zusätzlich `MCP_AUTH_TOKEN_FILE` (eine Zeile je Token). Ein Komma im Token trennt jetzt.
