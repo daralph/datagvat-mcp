@@ -6,18 +6,18 @@ Lädt CSV-/JSON-/Parquet-Distributionen sowie ZIP-Archive und Excel-Dateien (`.x
 ## In 5 Minuten
 Voraussetzung für beide Serverwege ist das veröffentlichte Container-Image `ghcr.io/daralph/datagvat-mcp:1.1` (entsteht über `.github/workflows/release.yml` beim Tag `v1.1.0`, auf GitHub auf *public* gestellt).
 
-- **Weg A – Exoscale (Wien, mit Caddy-HTTPS):**
+- **Weg A – eigene VM (Exoscale, mit Caddy-HTTPS):**
   ```bash
-  ./deploy/exoscale/up.sh
+  ./deploy/exoscale/up.sh --domain mcp.example.org
   ```
-  Legt Security Group (`80`/`443` offen, `22` nur eigene IP) und Instanz an, erzeugt das Token erst auf der VM (`/opt/datagvat-mcp/deploy/exoscale/.env`) und prüft `/healthz` sowie `initialize`. Details: `deploy/exoscale/README.md`.
-- **Weg B – bestehende LibreChat-Installation (Docker Compose):**
+  Legt Security Group (`80`/`443` offen, `22` nur eigene IP) und Instanz an, erzeugt das Token erst auf der VM (`/opt/datagvat-mcp/deploy/exoscale/.env`) und prüft `/healthz` sowie `initialize`. Geeignet sowohl für eine zentrale Remote-Anbindung aus LibreChat (`https://<MCP_DOMAIN>/mcp`) als auch für Claude Code / Custom Connectors. Details: `deploy/exoscale/README.md`.
+- **Weg B – bestehende LibreChat-Installation (Docker Compose auf demselben Host):**
   ```bash
   bash <Pfad zum Repo>/deploy/librechat/install.sh
   ```
   Ergänzt `.env`, `librechat.yaml` und `docker-compose.datagvat.yml` mit Sicherungskopie (`--dry-run` zum Prüfen, `--uninstall` zum Rückbau). Details: `deploy/README.md`.
 
-*Status (15.11.2026):* Die Dateibehandlung von `install.sh` (6 Fälle) sowie Image-Build, Rauchtest, `compose.yml` und `Caddyfile` sind in der CI geprüft; der echte Lauf auf Exoscale (`up.sh`) und in einer Live-LibreChat-Instanz samt Zeitmessung steht noch aus (`docs/abschlussbericht.md`).
+Pro LibreChat-Umgebung wählt man **entweder** Weg A (isolierte VM) **oder** Weg B (Mit-Container auf demselben Host). *Hinweis:* Image-Build, Container-Rauchtest, `compose.yml`, `Caddyfile` und `install.sh` (Dateibehandlung) sind automatisiert in der CI geprüft; der echte Live-Test gegen Exoscale (`up.sh`/Caddy) bzw. eine laufende LibreChat-Instanz sollte beim Ausrollen auf dem Zielsystem einmalig durchgeführt werden.
 
 ## Tools
 | Tool | Zweck |
@@ -103,7 +103,7 @@ Die Tests laufen mit beiden mcp-Hauptversionen (240 offline, 4 live). Mit 2.x si
   5. *Interne Adressen / Cloud-Metadaten:* SSRF-Schutz mit IP-Pinning blockiert Link-Local- und Metadaten-Adressen (`169.254.169.254`, `fe80::1`, `fd00:ec2::254`) sowohl direkt als auch nach DNS-Auflösung (im Test belegt).
   6. *Zugriff auf die VM:* SSH nur per Schlüssel und nur von der eigenen IP (`up.sh`), automatische Sicherheitsupdates (`unattended-upgrades`).
   7. *Token-Transport bei der Einrichtung:* Tokens entstehen erst auf dem Zielsystem (`first-boot.sh`, `install.sh`), stehen weder in User-Daten noch im Log.
-- **CPU-Anforderung (DuckDB 2.0.0):** Die festgeschriebene Version `duckdb 2.0.0` nutzt AVX-Befehle und stürzt auf sehr alten x86-CPUs ohne AVX (gemessen auf Intel Celeron J3355, Synology DS218+) mit `SIGILL` ab; moderne Server-CPUs (Exoscale, GitHub-Runner) sind nicht betroffen.
+- **CPU-Anforderung (DuckDB 2.0.0):** Die festgeschriebene Version `duckdb 2.0.0` nutzt AVX-Befehle und stürzt auf sehr alten x86-CPUs ohne AVX mit `SIGILL` ab; moderne Server-CPUs (z. B. Exoscale und aktuelle Cloud-VMs) sind nicht betroffen.
 
 ## Konfiguration (Umgebungsvariablen)
 | Variable | Standard | Bedeutung |
@@ -128,7 +128,7 @@ Die Tests laufen mit beiden mcp-Hauptversionen (240 offline, 4 live). Mit 2.x si
 | `MCP_STATELESS` | – | `1` = zustandsloser Betrieb (nur `streamable-http`) |
 | `DATAGVAT_ALLOWED_HOSTS` | – | Erlaubte Abruf-Ziele per Suffix, z. B. `gv.at,statistik.at`; leer = alle öffentlichen Hosts |
 
-`GET /healthz` antwortet im HTTP-Betrieb ohne Token mit Status und Version. Stand und offene Punkte des Serverbetriebs: `docs/serverbetrieb-analyse.md`.
+`GET /healthz` antwortet im HTTP-Betrieb ohne Token mit Status und Version.
 Betrieb auf einer VM (Exoscale) oder in LibreChat: `deploy/README.md`.
 
 Abhängigkeiten sind in `datagvat_mcp.py.lock` festgeschrieben (`uv lock --script datagvat_mcp.py`). Das Docker-Image installiert beim Build genau diese Versionen in ein venv (`uv export --locked`) und startet ohne `uv` direkt mit `python`. Aktualisieren: `uv lock --script --upgrade datagvat_mcp.py`, danach Tests laufen lassen (wegen des IP-Pinnings besonders bei httpx/httpcore). CI (`.github/workflows/tests.yml`) testet bei jedem Push gegen mcp 1.x und 2.x und baut das Image, wöchentlich zusätzlich gegen die echte API.

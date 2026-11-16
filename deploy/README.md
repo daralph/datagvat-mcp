@@ -1,31 +1,33 @@
 # Betrieb auf einem Server
 
-Stand 15.11.2026: Dateien geschrieben und statisch geprüft, **noch nicht auf Exoscale, mit Caddy oder mit einer echten LibreChat-Instanz gelaufen**. Zeiten sind nicht gemessen. Details: `docs/serverbetrieb-analyse.md`.
+Voraussetzung für beide Wege ist das veröffentlichte Container-Image `ghcr.io/daralph/datagvat-mcp:1.1` (öffentlich über `.github/workflows/release.yml` bereitgestellt).
 
-Voraussetzung für beide Wege ist das veröffentlichte Image `ghcr.io/daralph/datagvat-mcp`. Es entsteht über `.github/workflows/release.yml` beim Tag `v1.1.0` und muss in GitHub einmal auf „public“ gestellt werden.
+Pro LibreChat-Installation wählt man **entweder** Weg A (eigene VM per HTTPS) **oder** Weg B (Mit-Container direkt auf dem LibreChat-Host).
 
 ## Weg A: Exoscale (oder jede Ubuntu-VM mit öffentlicher IPv4)
 
 Mit eingerichteter `exo`-CLI in einem Befehl:
 
 ```bash
-./deploy/exoscale/up.sh
+./deploy/exoscale/up.sh --domain mcp.example.org
 ```
 
-Details (Voraussetzungen, eigene Domain, Token-Rotation, Rückbau): `deploy/exoscale/README.md`.
+Details (Voraussetzungen, LibreChat-Remote-Einbindung für alle Nutzerinnen, Security-Group-Härtung, Token-Rotation, Rückbau): `deploy/exoscale/README.md`.
 
 Manuell ohne `exo`-CLI:
-1. Instanz mit Ubuntu 24.04 anlegen, Security Group mit 80 und 443 offen und 22 nur von der eigenen IP.
-2. Den Inhalt von `deploy/exoscale/cloud-init.yaml` als „User Data“ angeben.
+1. Instanz mit Ubuntu 24.04 anlegen, Security Group mit 80 und 443 offen (Port 443 optional auf die IP des LibreChat-Servers einschränken) und 22 nur von der eigenen Admin-IP.
+2. Den Inhalt von `deploy/exoscale/cloud-init.yaml` als „User Data“ angeben (bei eigener Domain vorab `/etc/datagvat-domain` schreiben oder `MCP_DOMAIN` setzen).
 3. Nach dem Start per SSH: `sudo cat /opt/datagvat-mcp/deploy/exoscale/.env` zeigt Adresse und Token.
 
-Ohne eigene Domain bildet `first-boot.sh` den Hostnamen aus der IP über `sslip.io`. Ob die Zertifizierungsstelle dafür zuverlässig ausstellt, ist ungeprüft. Mit eigener Domain: `--domain <Host>` an `up.sh` übergeben oder DNS-Eintrag vorher setzen und `MCP_DOMAIN` vor `first-boot.sh` exportieren.
+Ohne eigene Domain bildet `first-boot.sh` den Hostnamen aus der IP über `sslip.io` (für produktive Umgebungen ist eine eigene Subdomain mit `--domain` vorzuziehen).
 
-Einbinden in claude.ai als Custom Connector: URL `https://<MCP_DOMAIN>/mcp`, Request-Header `Authorization` mit Wert `Bearer <Token>`.
+Einbinden:
+- **LibreChat (Remote-VM für alle Nutzerinnen):** In `librechat.yaml` `type: streamable-http`, `url: "https://<MCP_DOMAIN>/mcp"`, `requiresOAuth: false`, `chatMenu: true` und `Authorization: "Bearer ${DATAGVAT_MCP_TOKEN}"` eintragen (Details in `deploy/exoscale/README.md`).
+- **claude.ai / Custom Connector:** URL `https://<MCP_DOMAIN>/mcp`, Request-Header `Authorization` mit Wert `Bearer <Token>`.
 
 Update: `docker compose --env-file .env pull && docker compose --env-file .env up -d` im Ordner `deploy/exoscale`. Zweites Token für den Wechsel: in `.env` mit Komma anhängen, neu starten, altes später entfernen.
 
-## Weg B: LibreChat
+## Weg B: LibreChat auf demselben Host (Docker Compose)
 
 Im LibreChat-Ordner:
 

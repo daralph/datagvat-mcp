@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (unveröffentlicht)
+## 1.1.0 (2026-11-16)
 - HTTP-Betrieb: `GET /healthz` ohne Token (nur Status und Version), alle anderen Pfade bleiben geschützt.
 - Mehrere Tokens: `MCP_AUTH_TOKEN` als Komma-Liste, zusätzlich `MCP_AUTH_TOKEN_FILE` (eine Zeile je Token). Ein Komma im Token trennt jetzt.
 - `MCP_ALLOWED_HOSTS` und `MCP_ALLOWED_ORIGINS`: Host-/Origin-Prüfung mit eigenen Hostnamen, z. B. hinter einem Reverse Proxy.
