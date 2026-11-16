@@ -9,7 +9,7 @@ RUN uv venv /opt/venv \
  && /opt/venv/bin/python /app/datagvat_mcp.py --selftest
 
 # Stufe 2: schlankes Laufzeit-Image ohne uv und ohne Schreibbedarf ausserhalb von /tmp.
-FROM python:3.12-slim-bookworm
+FROM python:3.15-slim-bookworm
 COPY --from=build /opt/venv /opt/venv
 COPY datagvat_mcp.py /app/datagvat_mcp.py
 ENV PATH=/opt/venv/bin:$PATH \
