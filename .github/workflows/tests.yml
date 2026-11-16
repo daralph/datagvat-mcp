@@ -12,7 +12,7 @@ jobs:
       matrix:
         mcp: ["mcp[cli]>=1.30,<2", "mcp[cli]>=2,<3"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
       - run: uv run --no-project --python 3.12 --with pytest --with pytest-asyncio --with "${{ matrix.mcp }}" --with httpx --with duckdb --with python-calamine pytest -p no:cacheprovider -q
       - run: uv run --locked --script datagvat_mcp.py --selftest
@@ -20,13 +20,13 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
       - run: uv run --no-project --python 3.12 --with pytest --with pytest-asyncio --with "mcp[cli]>=1.30,<3" --with httpx --with duckdb --with python-calamine pytest -p no:cacheprovider -q -m live
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker build -t datagvat-mcp .
       - name: Rauchtest des Images, schreibgeschuetzt mit Volume fuer /tmp (wie deploy/exoscale)
         run: bash deploy/smoke-test.sh datagvat-mcp
