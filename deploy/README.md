@@ -35,7 +35,9 @@ Im LibreChat-Ordner:
 bash <Pfad zum Repo>/deploy/librechat/install.sh
 ```
 
-Das Skript erzeugt das Token, bindet den Dienst über eine eigene Compose-Datei ein, ergänzt `librechat.yaml`, startet und prüft. `--dry-run` zeigt nur den Plan, `--uninstall` nimmt die eigenen Änderungen zurück, `--no-start` richtet nur die Dateien ein. Die Dateibehandlung ist mit `deploy/librechat/test-install.sh` geprüft (sechs Fälle), der Teil mit Docker nicht.
+Das Skript erzeugt das Token, bindet den Dienst über eine eigene Compose-Datei ein, ergänzt `librechat.yaml`, startet und prüft. `--dry-run` zeigt nur den Plan, `--uninstall` nimmt die eigenen Änderungen zurück, `--no-start` richtet nur die Dateien ein, `--no-token` verzichtet auf das Bearer-Token (nur im abgeschotteten Compose-Netz). Die Dateibehandlung ist mit `deploy/librechat/test-install.sh` geprüft (neun Fälle), der Teil mit Docker nicht.
+
+Die vollständige Betreiber-Anleitung für diesen Weg (Einbau auch von Hand, Ressourcen, Netz, LibreChat-Seite, Betrieb, Datenhaltung, Rückbau) steht in `deploy/librechat/README.md`.
 
 ## Prüfen
 

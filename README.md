@@ -42,6 +42,7 @@ Absoluter `uv`-Pfad nötig, Claude Code startet ohne Login-Shell-PATH.
 - Das Token ist ein einfaches gemeinsames Geheimnis, kein OAuth. Es schützt nicht vor einem Angreifer, der den Netzverkehr mitlesen kann: bei Zugriff über fremde Netze TLS davorschalten (Reverse Proxy).
 - Docker: `DATAGVAT_MCP_TOKEN` in die `.env`, `docker-compose.librechat.yml` reicht es als `MCP_AUTH_TOKEN` durch, `librechat.mcp.example.yaml` setzt den Header. Der Healthcheck prüft nur den TCP-Port. Getestet (2026-10-14, Docker 29.8 auf macOS): Image-Build samt Selftest, Lauf als `nobody`, Healthcheck `healthy`, Start ohne Token verweigert (Exit 2), HTTP 401 ohne/mit falschem Token, Tool-Aufruf mit Token gegen data.gv.at, Compose-Datei mit Stub-Basis und Pflicht-Token. Nicht getestet: echte LibreChat-Instanz (`headers: Authorization`).
 - **Wiederholungen:** Katalog-Anfragen und Downloads werden bei 429/502/503/504 und Netzwerkfehlern bis zu `DATAGVAT_RETRIES` (Standard 2) Mal wiederholt, mit Wartezeit 0,5 s, 1 s, … (höchstens 10 s). Ein `Retry-After` in Sekunden hat Vorrang. Andere Fehler (404, 403, 500) werden sofort gemeldet. Bei abgebrochenen Downloads beginnt der Versuch von vorn.
+- Betreiber-Anleitung für den LibreChat-Weg (Einbau, Ressourcen, Netz, Betrieb, Rückbau): `deploy/librechat/README.md`.
 
 ## LibreChat einrichten (Schritt für Schritt)
 Voraussetzung: eine LibreChat-Installation per Docker Compose (Ordner mit `docker-compose.yml`, `.env` und `librechat.yaml`).
@@ -94,7 +95,7 @@ Die Tests laufen mit beiden mcp-Hauptversionen (240 offline, 4 live). Mit 2.x si
 - DuckDB: Daten werden vor dem Sperren geladen, danach `enable_external_access=false` und `lock_configuration=true`. Nur eine Anweisung, nur lesend, 512 MB RAM, höchstens 1 GB Auslagerung auf Platte, 30 s Zeitlimit je Abfrage (Laden der Datei: 60 s). Ergebnis: höchstens 200 Zeilen, Zellen auf 2000 Zeichen gekürzt (`cells_shortened`), insgesamt höchstens 1 Mio. Zeichen.
 - Downloads: Gesamtzeit höchstens 120 s (`DATAGVAT_DOWNLOAD_TIMEOUT`), höchstens 4 gleichzeitige Aufrufe mit Datei (`DATAGVAT_MAX_PARALLEL`). Excel: höchstens 5 Mio. Zellen im Blattbereich; bei `.xlsx` werden die Archivmitglieder mit eigenem Zähler neu gepackt, gefälschte Größenangaben im ZIP-Header fallen auf (Zip-Bomb-Schutz). ZIP-Archive mit mehr als 10.000 Einträgen werden abgelehnt, bevor das Inhaltsverzeichnis geladen wird. Temporäre Dateien liegen in einem eigenen Verzeichnis `datagvat-<PID>-…`, das beim Beenden entfernt wird; Reste abgestürzter Prozesse räumt der nächste Start weg. Fehlermeldungen enthalten keine lokalen Pfade.
 - Download-Limit 50 MB (`DATAGVAT_MAX_BYTES`), entpackt 200 MB (`DATAGVAT_MAX_UNPACKED_BYTES`). PDF/HTML/XML werden mit klarer Meldung abgelehnt; ZIP (mit Auswahl per `archive_member`) und Excel (`.xlsx`/`.xls`, per `sheet`/`skip_rows`) werden geladen. `.xlsb`/`.ods` sind nicht unterstützt.
-- HTTP-Betrieb: Bearer-Token ist Pflicht (siehe oben). Bei Zugriff über fremde Netze zusätzlich TLS davorschalten.
+- HTTP-Betrieb: Bearer-Token ist Standard; abschaltbar nur bewusst mit `MCP_ALLOW_NO_AUTH=1` in einem abgeschotteten Netz (siehe oben). Bei Zugriff über fremde Netze zusätzlich TLS davorschalten.
 - **Bedrohungsbild für den öffentlichen Betrieb:**
   1. *Token-Leak / Abruf-Proxy:* Mehrere Tokens (`MCP_AUTH_TOKEN` als Komma-Liste, `MCP_AUTH_TOKEN_FILE`) für unterbrechungsfreien Wechsel, optionale Ziel-Einschränkung (`DATAGVAT_ALLOWED_HOSTS`), Parallelitätslimit (`DATAGVAT_MAX_PARALLEL`), Größen-/Zeitlimits, Anfragegrößen-Limit am Caddy-Proxy (4 MB).
   2. *Mitlesen:* Zwingendes TLS über Caddy in `deploy/exoscale/compose.yml`, kein unverschlüsselter Port nach außen.
@@ -104,6 +105,7 @@ Die Tests laufen mit beiden mcp-Hauptversionen (240 offline, 4 live). Mit 2.x si
   6. *Zugriff auf die VM:* SSH nur per Schlüssel und nur von der eigenen IP (`up.sh`), automatische Sicherheitsupdates (`unattended-upgrades`).
   7. *Token-Transport bei der Einrichtung:* Tokens entstehen erst auf dem Zielsystem (`first-boot.sh`, `install.sh`), stehen weder in User-Daten noch im Log.
 - **CPU-Anforderung (DuckDB 2.0.0):** Die festgeschriebene Version `duckdb 2.0.0` nutzt AVX-Befehle und stürzt auf sehr alten x86-CPUs ohne AVX mit `SIGILL` ab; moderne Server-CPUs (z. B. Exoscale und aktuelle Cloud-VMs) sind nicht betroffen.
+- **Schwachstellen melden:** siehe `SECURITY.md` (private Meldung über GitHub, keine öffentlichen Issues).
 
 ## Konfiguration (Umgebungsvariablen)
 | Variable | Standard | Bedeutung |
