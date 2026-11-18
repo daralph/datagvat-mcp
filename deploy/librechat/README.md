@@ -118,7 +118,13 @@ Server-interne Grenzen (zur Einordnung, aus README.md, Abschnitt Sicherheit): Du
 - `timeout: 150000` (Millisekunden): Downloads dürfen serverseitig bis 120 s dauern, der Client-Timeout muss darüber liegen.
 - `initTimeout: 15000` (Millisekunden) für den Verbindungsaufbau.
 - `chatMenu: true`: der Server erscheint im Chat-Menü und ist für alle Nutzerinnen der LibreChat ohne eigene Anmeldung nutzbar.
-- Hinweis: Blockiert der SSRF-Schutz der LibreChat den internen Dienstnamen `mcp-datagvat:8000`, den Eintrag über `mcpSettings.allowedAddresses` in `librechat.yaml` freigeben. Dieser Schritt ist noch nicht in einer laufenden LibreChat bestätigt und vom Betreiber zu prüfen.
+- **Pflicht:** `mcp-datagvat:8000` in `librechat.yaml` unter `mcpSettings.allowedAddresses` eintragen. Ohne den Eintrag blockiert der SSRF-Schutz der LibreChat den internen Dienstnamen (`Domain "http://mcp-datagvat:8000" is not allowed`) und der Server erscheint mit 0 Tools. Geprüft mit LibreChat v0.8.8-rc4. `install.sh` trägt das nicht ein; wer `mcpSettings.allowedDomains` nutzt, ergänzt den Namen dort.
+
+  ```yaml
+  mcpSettings:
+    allowedAddresses:
+      - "mcp-datagvat:8000"
+  ```
 
 ## Betrieb
 
