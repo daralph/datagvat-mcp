@@ -2,7 +2,7 @@
 name: datagvat-mcp
 services:
   mcp:
-    image: ghcr.io/daralph/datagvat-mcp:${MCP_IMAGE_TAG:-1.1}
+    image: ghcr.io/daralph/datagvat-mcp:${MCP_IMAGE_TAG:-1.2}
     restart: unless-stopped
     init: true   # raeumt Zombie-Prozesse ab; python ist im Image der Hauptprozess und erhaelt SIGTERM
     read_only: true   # geschrieben wird nur nach /tmp (Volume unten)

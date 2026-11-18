@@ -82,7 +82,7 @@ RETRY_MAX_DELAY = 10.0
 LINK_CHECK_TIMEOUT = float(os.getenv("DATAGVAT_LINK_CHECK_TIMEOUT", "8"))  # je Link: HTTP-Timeout, Gesamtlimit das Doppelte
 LINK_CHECK_MAX = 20  # hoechstens so viele Distributions-Links pro Datensatz pruefen
 LINK_CHECK_PARALLEL = 6  # gleichzeitige Link-Pruefungen
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 USER_AGENT = f"datagvat-mcp/{__version__} (+https://www.data.gv.at/)"
 
 

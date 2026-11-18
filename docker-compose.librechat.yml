@@ -17,5 +17,6 @@ services:
       - MCP_TRANSPORT=streamable-http
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000
-      # Pflicht: ohne Token verweigert der Server den Start (z. B. 'openssl rand -hex 32' in die .env als DATAGVAT_MCP_TOKEN)
-      - MCP_AUTH_TOKEN=${DATAGVAT_MCP_TOKEN:?DATAGVAT_MCP_TOKEN in .env setzen}
+      # Standard: Token in die .env als DATAGVAT_MCP_TOKEN ('openssl rand -hex 32'); ohne beides verweigert der Server den Start
+      - MCP_AUTH_TOKEN=${DATAGVAT_MCP_TOKEN:-}
+      - MCP_ALLOW_NO_AUTH=${DATAGVAT_MCP_ALLOW_NO_AUTH:-0}

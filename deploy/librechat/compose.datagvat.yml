@@ -9,7 +9,7 @@ services:
       - mcp-datagvat
 
   mcp-datagvat:
-    image: ghcr.io/daralph/datagvat-mcp:${DATAGVAT_MCP_IMAGE_TAG:-1.1}
+    image: ghcr.io/daralph/datagvat-mcp:${DATAGVAT_MCP_IMAGE_TAG:-1.2}
     container_name: mcp-datagvat
     restart: unless-stopped
     init: true
@@ -21,7 +21,8 @@ services:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000
       - MCP_STATELESS=1
-      - MCP_AUTH_TOKEN=${DATAGVAT_MCP_TOKEN:?DATAGVAT_MCP_TOKEN in .env setzen}
+      - MCP_AUTH_TOKEN=${DATAGVAT_MCP_TOKEN:-}
+      - MCP_ALLOW_NO_AUTH=${DATAGVAT_MCP_ALLOW_NO_AUTH:-0}
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 2g

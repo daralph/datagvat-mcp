@@ -11,6 +11,7 @@ mcpServers:
     initTimeout: 15000
     chatMenu: true
     requiresOAuth: false
+    # Bei Betrieb ohne Token (DATAGVAT_MCP_ALLOW_NO_AUTH=1) die folgenden zwei Zeilen loeschen.
     headers:
       Authorization: "Bearer ${DATAGVAT_MCP_TOKEN}"
     serverInstructions: >

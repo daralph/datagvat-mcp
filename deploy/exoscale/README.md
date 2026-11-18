@@ -3,7 +3,7 @@
 ## Voraussetzungen (einmalig)
 - Exoscale-Konto mit eingerichteter [`exo`-CLI](https://community.exoscale.com/documentation/tools/exoscale-command-line-interface/) (`exo config`), `jq` und `curl`
 - Mindestens ein bei Exoscale hinterlegter SSH-Schlüssel (`exo compute ssh-key register`)
-- Veröffentlichtes Container-Image `ghcr.io/daralph/datagvat-mcp:1.1`
+- Veröffentlichtes Container-Image `ghcr.io/daralph/datagvat-mcp:1.2`
 
 ## Start in einem Befehl
 ```bash
@@ -71,7 +71,7 @@ Per SSH auf der Instanz unter `/opt/datagvat-mcp/deploy/exoscale`:
 
 ## Dauerbetrieb, automatische Updates & Monitoring (Empfehlung an den Betreiber)
 - **OS-Sicherheitspatches:** `unattended-upgrades` wird durch `cloud-init.yaml` automatisch eingerichtet. Für Kernel-Updates ggf. ein geplantes Neustartfenster vereinbaren (`restart: unless-stopped` startet beide Container danach wieder).
-- **Container-Images aktuell halten (`:1.1` und `caddy:2`):** Wöchentlicher Cronjob auf der VM (z. B. sonntags 04:00 Uhr in `/etc/cron.d/datagvat-update`), da `unattended-upgrades` nur OS-Pakete aktualisiert:
+- **Container-Images aktuell halten (`:1.2` und `caddy:2`):** Wöchentlicher Cronjob auf der VM (z. B. sonntags 04:00 Uhr in `/etc/cron.d/datagvat-update`), da `unattended-upgrades` nur OS-Pakete aktualisiert:
   ```cron
   0 4 * * 0 root cd /opt/datagvat-mcp/deploy/exoscale && docker compose --env-file .env pull -q && docker compose --env-file .env up -d && docker image prune -f >/dev/null 2>&1
   ```

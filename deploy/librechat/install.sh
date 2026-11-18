@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # datagvat-mcp in eine bestehende LibreChat-Installation (Docker Compose) einbinden.
-# Aufruf im LibreChat-Ordner:  bash <Pfad>/deploy/librechat/install.sh [--dry-run] [--no-start] [--uninstall]
+# Aufruf im LibreChat-Ordner:  bash <Pfad>/deploy/librechat/install.sh [--dry-run] [--no-start] [--no-token] [--uninstall]
+# --no-token: Betrieb ohne Bearer-Token (nur in einem abgeschotteten Netz).
 # Eigene Aenderungen stehen zwischen Markierungen und lassen sich mit --uninstall rueckstandsfrei entfernen.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE=install
 START=1
+TOKEN=1
 for arg in "$@"; do
   case "$arg" in
     --dry-run) MODE=dry-run ;;
     --uninstall) MODE=uninstall ;;
     --no-start) START=0 ;;
+    --no-token) TOKEN=0 ;;
     *) echo "Unbekannte Option: $arg" >&2; exit 64 ;;
   esac
 done
@@ -88,12 +91,18 @@ if [ "$ENV_HAS_BLOCK" = 0 ]; then
   {
     if [ -s .env ] && [ -n "$(tail -c 1 .env)" ]; then echo; fi
     echo "$BEGIN"
-    grep -qE '^[[:space:]]*DATAGVAT_MCP_TOKEN=.' .env || echo "DATAGVAT_MCP_TOKEN=$(openssl rand -hex 32)"
+    if [ "$TOKEN" = 1 ]; then
+      grep -qE '^[[:space:]]*DATAGVAT_MCP_TOKEN=.' .env || echo "DATAGVAT_MCP_TOKEN=$(openssl rand -hex 32)"
+    else
+      echo "DATAGVAT_MCP_ALLOW_NO_AUTH=1"
+    fi
     grep -qE '^[[:space:]]*COMPOSE_FILE=' .env || echo "COMPOSE_FILE=$files:$COMPOSE_NAME"
     echo "$END"
   } >> .env
 fi
 
+HDR="" # headers-Zeilen nur mit Token; LibreChat loest ${DATAGVAT_MCP_TOKEN} selbst auf
+if [ "$TOKEN" = 1 ]; then HDR=$'  headers:\n    Authorization: "Bearer ${DATAGVAT_MCP_TOKEN}"\n'; fi
 entry() { # $1 = Einrueckung der Server-Namen unter mcpServers
   sed "s/^/$1/" <<ENTRY
 $BEGIN
@@ -104,9 +113,7 @@ datagvat:
   initTimeout: 15000
   chatMenu: true
   requiresOAuth: false
-  headers:
-    Authorization: "Bearer \${DATAGVAT_MCP_TOKEN}"
-  serverInstructions: >
+${HDR}  serverInstructions: >
     Workflow fuer oesterreichische Open Data (data.gv.at):
     1. Suche Datensaetze mit search_datasets.
     2. Hole Distributionen mit get_dataset_details und nimm recommended_url.
@@ -148,9 +155,10 @@ step "MCP-Server bereit, initialize pruefen"
 dc exec -T mcp-datagvat python3 - <<'PY' || die "initialize fehlgeschlagen. Siehe: docker compose logs mcp-datagvat"
 import json, os, urllib.request
 body = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "install", "version": "0"}}}
-req = urllib.request.Request("http://127.0.0.1:8000/mcp", data=json.dumps(body).encode(), headers={
-    "Authorization": "Bearer " + os.environ["MCP_AUTH_TOKEN"].split(",")[0].strip(),
-    "Content-Type": "application/json", "Accept": "application/json, text/event-stream"})
+hdrs = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+if os.environ.get("MCP_AUTH_TOKEN", "").strip():
+    hdrs["Authorization"] = "Bearer " + os.environ["MCP_AUTH_TOKEN"].split(",")[0].strip()
+req = urllib.request.Request("http://127.0.0.1:8000/mcp", data=json.dumps(body).encode(), headers=hdrs)
 assert "data-gv-at" in urllib.request.urlopen(req, timeout=15).read().decode()
 PY
 step "LibreChat neu laden"
