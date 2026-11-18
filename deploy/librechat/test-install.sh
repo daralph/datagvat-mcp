@@ -9,7 +9,7 @@ run() { (cd "$1" && shift && bash "$HERE/install.sh" "$@" >/dev/null); }
 fresh() { rm -rf "$WORK/lc" "$WORK/orig"; mkdir -p "$WORK/lc"; printf 'services:\n  api:\n    image: stub\n' > "$WORK/lc/docker-compose.yml"; printf 'HOST=localhost\nPORT=3080\n' > "$WORK/lc/.env"; }
 snapshot() { mkdir -p "$WORK/orig"; cp -p "$WORK/lc/.env" "$WORK/orig/"; if [ -f "$WORK/lc/librechat.yaml" ]; then cp -p "$WORK/lc/librechat.yaml" "$WORK/orig/"; fi; }
 same_as_before() { cmp -s "$WORK/lc/.env" "$WORK/orig/.env" || fail "$1: .env weicht ab"; if [ -f "$WORK/orig/librechat.yaml" ]; then cmp -s "$WORK/lc/librechat.yaml" "$WORK/orig/librechat.yaml" || fail "$1: librechat.yaml weicht ab"; else [ ! -e "$WORK/lc/librechat.yaml" ] || fail "$1: librechat.yaml blieb liegen"; fi; [ ! -e "$WORK/lc/docker-compose.datagvat.yml" ] || fail "$1: Compose-Datei blieb liegen"; }
-valid_yaml() { python3 - "$1" <<'PY'
+valid_yaml() { python3 - "$@" <<'PY'
 import sys
 try:
     import yaml

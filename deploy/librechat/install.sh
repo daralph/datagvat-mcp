@@ -101,6 +101,8 @@ if [ "$ENV_HAS_BLOCK" = 0 ]; then
   } >> .env
 fi
 
+HDR="" # headers-Zeilen nur mit Token; LibreChat loest ${DATAGVAT_MCP_TOKEN} selbst auf
+if [ "$TOKEN" = 1 ]; then HDR=$'  headers:\n    Authorization: "Bearer ${DATAGVAT_MCP_TOKEN}"\n'; fi
 entry() { # $1 = Einrueckung der Server-Namen unter mcpServers
   sed "s/^/$1/" <<ENTRY
 $BEGIN
@@ -111,7 +113,7 @@ datagvat:
   initTimeout: 15000
   chatMenu: true
   requiresOAuth: false
-$(if [ "$TOKEN" = 1 ]; then printf '  headers:\n    Authorization: "Bearer \\${DATAGVAT_MCP_TOKEN}"\n'; fi)  serverInstructions: >
+${HDR}  serverInstructions: >
     Workflow fuer oesterreichische Open Data (data.gv.at):
     1. Suche Datensaetze mit search_datasets.
     2. Hole Distributionen mit get_dataset_details und nimm recommended_url.
