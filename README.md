@@ -1,10 +1,10 @@
 # datagvat-mcp
 
-MCP-Server (Version 1.1.1) für den österreichischen Open-Data-Katalog [data.gv.at](https://www.data.gv.at/) (Piveau hub-search).
+MCP-Server (Version 1.2.0) für den österreichischen Open-Data-Katalog [data.gv.at](https://www.data.gv.at/) (Piveau hub-search).
 Lädt CSV-/JSON-/Parquet-Distributionen sowie ZIP-Archive und Excel-Dateien (`.xlsx`/`.xls`) und wertet sie mit DuckDB aus (Tabelle `dataset`, In-Memory, ohne Datei-/Netzzugriff).
 
 ## In 5 Minuten
-Voraussetzung für beide Serverwege ist das veröffentlichte Container-Image `ghcr.io/daralph/datagvat-mcp:1.1` (entsteht über `.github/workflows/release.yml` beim Tag `v1.1.1`, auf GitHub auf *public* gestellt).
+Voraussetzung für beide Serverwege ist das veröffentlichte Container-Image `ghcr.io/daralph/datagvat-mcp:1.2` (entsteht über `.github/workflows/release.yml` beim Tag `v1.2.0`, auf GitHub auf *public* gestellt).
 
 - **Weg A – eigene VM (Exoscale, mit Caddy-HTTPS):**
   ```bash

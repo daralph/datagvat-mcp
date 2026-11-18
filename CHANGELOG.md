@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 (2026-11-18)
+- LibreChat-Weg: `deploy/librechat/install.sh --no-token` richtet den Dienst ohne Bearer-Token ein (`DATAGVAT_MCP_ALLOW_NO_AUTH=1`, nur im abgeschotteten Compose-Netz). Ohne das Flag bleibt das Token Standard. Die Compose-Dateien reichen das Token optional durch; fehlt beides, verweigert der Server wie bisher den Start.
+- Neue Betreiber-Anleitung `deploy/librechat/README.md` (Einbau, Ressourcen, Netz, Betrieb, Datenhaltung, Rückbau).
+- `SECURITY.md`: Schwachstellen über die private GitHub-Meldung.
+- `release.yml` legt zum Tag ein GitHub-Release an.
+
 ## 1.1.1 (2026-11-16)
 - Dokumentation bereinigt und um die Remote-Einbindung in LibreChat (Exoscale-VM mit `chatMenu: true`, `MCP_STATELESS=1`, Security-Group- und Update-Empfehlungen) ergänzt; `cloud-init.yaml` auf `v1.1.1` aktualisiert.
 - `datagvat_mcp.py.lock` aktualisiert; `.github/dependabot.yml` (Docker, Docker Compose, GitHub Actions) und monatlicher Workflow `.github/workflows/lockfile-update.yml` ergänzt.

@@ -9,7 +9,7 @@ services:
       - mcp-datagvat
 
   mcp-datagvat:
-    image: ghcr.io/daralph/datagvat-mcp:${DATAGVAT_MCP_IMAGE_TAG:-1.1}
+    image: ghcr.io/daralph/datagvat-mcp:${DATAGVAT_MCP_IMAGE_TAG:-1.2}
     container_name: mcp-datagvat
     restart: unless-stopped
     init: true

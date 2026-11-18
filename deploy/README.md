@@ -1,6 +1,6 @@
 # Betrieb auf einem Server
 
-Voraussetzung für beide Wege ist das veröffentlichte Container-Image `ghcr.io/daralph/datagvat-mcp:1.1` (öffentlich über `.github/workflows/release.yml` bereitgestellt).
+Voraussetzung für beide Wege ist das veröffentlichte Container-Image `ghcr.io/daralph/datagvat-mcp:1.2` (öffentlich über `.github/workflows/release.yml` bereitgestellt).
 
 Pro LibreChat-Installation wählt man **entweder** Weg A (eigene VM per HTTPS) **oder** Weg B (Mit-Container direkt auf dem LibreChat-Host).
 

@@ -5,7 +5,7 @@ Diese Anleitung richtet sich an den Betreiber einer bestehenden LibreChat-Instal
 ## Voraussetzungen
 
 - Eine LibreChat-Installation per Docker Compose: ein Ordner mit `docker-compose.yml`, `.env` und `librechat.yaml`.
-- Zugriff auf `ghcr.io` für das öffentliche Image `ghcr.io/daralph/datagvat-mcp:1.1` (bereitgestellt über `.github/workflows/release.yml`).
+- Zugriff auf `ghcr.io` für das öffentliche Image `ghcr.io/daralph/datagvat-mcp:1.2` (bereitgestellt über `.github/workflows/release.yml`).
 - `docker compose` und `openssl` auf dem Host.
 - Dieses Repo auf dem Host verfügbar (geklont oder als Kopie), Aufrufe erfolgen aus dem LibreChat-Ordner heraus.
 
@@ -57,7 +57,7 @@ Die Dateibehandlung des Skripts ist mit `deploy/librechat/test-install.sh` gepr�
          - mcp-datagvat
 
      mcp-datagvat:
-       image: ghcr.io/daralph/datagvat-mcp:${DATAGVAT_MCP_IMAGE_TAG:-1.1}
+       image: ghcr.io/daralph/datagvat-mcp:${DATAGVAT_MCP_IMAGE_TAG:-1.2}
        container_name: mcp-datagvat
        restart: unless-stopped
        environment:
