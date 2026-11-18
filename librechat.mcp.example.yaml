@@ -3,6 +3,12 @@
 version: 1.2.1
 cache: true
 
+# Pflicht: sonst blockiert der SSRF-Schutz der LibreChat den internen Dienstnamen
+# ("Domain ... is not allowed"), der Server erscheint mit 0 Tools.
+mcpSettings:
+  allowedAddresses:
+    - "mcp-datagvat:8000"
+
 mcpServers:
   datagvat:
     type: streamable-http
