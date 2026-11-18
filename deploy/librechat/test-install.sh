@@ -17,7 +17,10 @@ except ImportError:
     sys.exit(0)
 doc = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
 assert doc["mcpServers"]["datagvat"]["url"] == "http://mcp-datagvat:8000/mcp", doc
-assert doc["mcpServers"]["datagvat"]["headers"]["Authorization"] == "Bearer ${DATAGVAT_MCP_TOKEN}"
+if len(sys.argv) > 2 and sys.argv[2] == "notoken":
+    assert "headers" not in doc["mcpServers"]["datagvat"], doc
+else:
+    assert doc["mcpServers"]["datagvat"]["headers"]["Authorization"] == "Bearer ${DATAGVAT_MCP_TOKEN}"
 PY
 }
 
@@ -62,4 +65,29 @@ same_as_before "Abbruch Fall 5"
 fresh; echo 'DATAGVAT_MCP_TOKEN=vonhandgesetztvonhandgesetzt' >> "$WORK/lc/.env"
 run "$WORK/lc" --no-start
 [ "$(grep -c '^DATAGVAT_MCP_TOKEN=' "$WORK/lc/.env")" = 1 ] || fail "zweites Token angelegt"
+
+# Fall 7: Erstinstallation mit --no-token
+fresh; snapshot
+run "$WORK/lc" --no-start --no-token
+grep -qx 'DATAGVAT_MCP_ALLOW_NO_AUTH=1' "$WORK/lc/.env" || fail "ALLOW_NO_AUTH fehlt"
+if grep -q '^DATAGVAT_MCP_TOKEN=' "$WORK/lc/.env"; then fail "Token trotz --no-token angelegt"; fi
+if grep -q 'Authorization' "$WORK/lc/librechat.yaml"; then fail "Header trotz --no-token eingetragen"; fi
+valid_yaml "$WORK/lc/librechat.yaml" notoken
+run "$WORK/lc" --uninstall --no-start; same_as_before "Rueckbau Fall 7"
+
+# Fall 8: Wechsel von Token-Installation zu --no-token
+fresh
+run "$WORK/lc" --no-start
+grep -qE '^DATAGVAT_MCP_TOKEN=[0-9a-f]{64}$' "$WORK/lc/.env" || fail "Token fehlt"
+run "$WORK/lc" --uninstall --no-start
+run "$WORK/lc" --no-start --no-token
+grep -qx 'DATAGVAT_MCP_ALLOW_NO_AUTH=1' "$WORK/lc/.env" || fail "ALLOW_NO_AUTH fehlt nach Wechsel"
+if grep -q '^DATAGVAT_MCP_TOKEN=' "$WORK/lc/.env"; then fail "Token-Rest nach Wechsel"; fi
+if grep -q 'Authorization' "$WORK/lc/librechat.yaml"; then fail "Header-Rest nach Wechsel"; fi
+run "$WORK/lc" --uninstall --no-start
+if grep -qE 'DATAGVAT_MCP_(TOKEN|ALLOW_NO_AUTH)' "$WORK/lc/.env"; then fail "Block-Rest nach Rueckbau"; fi
+
+# Fall 9: Probelauf mit --no-token aendert nichts
+fresh; snapshot
+run "$WORK/lc" --dry-run --no-token; same_as_before "Probelauf Fall 9"
 echo "install.sh: alle Faelle ok"
